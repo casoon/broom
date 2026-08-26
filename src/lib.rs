@@ -2,6 +2,7 @@ pub mod commands;
 pub mod config;
 pub mod discover;
 pub mod doctor_command;
+pub mod history;
 pub mod inspect_command;
 pub mod interactive;
 pub mod level_a;
@@ -16,6 +17,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use discover::{DiscoverOptions, discover_targets, is_build_running};
+use history::{HistoryEntry, HistoryTrend};
 use interactive::{CandidateTarget, prompt_interactive_selection};
 use level_a::{LevelAOptions, clean_coarse, should_clean_coarse};
 use level_b::{LevelBOptions, clean_fine};
@@ -39,11 +41,70 @@ pub struct BroomRunnerOptions {
     pub clean_incremental: bool,
     pub clean_doc: bool,
     pub trash: bool,
+    pub history: bool,
     pub hidden: bool,
     pub skip: Vec<String>,
     pub ignore: Vec<String>,
     pub output_format: OutputFormat,
     pub color_mode: ColorMode,
+}
+
+/// Records this run's resulting target sizes to the `--history` log and, if any of
+/// them were already tracked, returns the net drift since each target's oldest
+/// still-retained entry (see `history::RETENTION_DAYS`).
+fn record_history(results: &[ProjectActionResult]) -> Option<HistoryTrend> {
+    let path = history::history_file_path()?;
+    record_history_at(&path, results, history::now_unix())
+}
+
+/// Core logic behind `--history`, with the log path and current time as explicit
+/// parameters so tests can exercise it without touching the real
+/// `~/.local/state/cargo-broom/history.jsonl` or depending on wall-clock time.
+fn record_history_at(
+    path: &std::path::Path,
+    results: &[ProjectActionResult],
+    now: u64,
+) -> Option<HistoryTrend> {
+    let existing = history::load_entries(path);
+
+    let new_entries: Vec<HistoryEntry> = results
+        .iter()
+        .map(|r| HistoryEntry {
+            timestamp_unix: now,
+            target_path: r.target_path.clone(),
+            project_name: r.project_name.clone(),
+            size_bytes: r.original_size_bytes.saturating_sub(r.reclaimed_bytes),
+        })
+        .collect();
+
+    let oldest = history::oldest_size_per_target(&existing);
+    let mut oldest_total_bytes = 0u64;
+    let mut current_total_bytes = 0u64;
+    let mut tracked_targets = 0usize;
+    for entry in &new_entries {
+        if let Some(&old_size) = oldest.get(&entry.target_path) {
+            oldest_total_bytes += old_size;
+            current_total_bytes += entry.size_bytes;
+            tracked_targets += 1;
+        }
+    }
+
+    if let Err(err) = history::append_and_prune(path, &existing, &new_entries, now) {
+        eprintln!(
+            "Warning: failed to update history log at {}: {err}",
+            path.display()
+        );
+    }
+
+    if tracked_targets == 0 {
+        return None; // nothing seen before, so there is no trend to report yet
+    }
+
+    Some(HistoryTrend {
+        tracked_targets,
+        oldest_total_bytes,
+        current_total_bytes,
+    })
 }
 
 pub fn run_broom(opts: BroomRunnerOptions, out: &mut dyn Write) -> Result<()> {
@@ -267,6 +328,14 @@ pub fn run_broom(opts: BroomRunnerOptions, out: &mut dyn Write) -> Result<()> {
         }
     }
 
+    // A dry run does not actually reach the sizes it reports, so recording it would
+    // pollute the trend log with states that never happened.
+    let history_trend = if opts.history && !opts.dry_run {
+        record_history(&results)
+    } else {
+        None
+    };
+
     let report_summary = BroomReportSummary {
         root_path: opts.root_path,
         dry_run: opts.dry_run,
@@ -276,6 +345,7 @@ pub fn run_broom(opts: BroomRunnerOptions, out: &mut dyn Write) -> Result<()> {
         skipped_count,
         error_count,
         total_reclaimed_bytes: total_reclaimed,
+        history_trend,
         results,
     };
 
@@ -284,4 +354,61 @@ pub fn run_broom(opts: BroomRunnerOptions, out: &mut dyn Write) -> Result<()> {
         anyhow::bail!("{} project(s) could not be cleaned", error_count);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod history_wiring_tests {
+    use super::*;
+    use report::CleaningLevel;
+    use std::path::PathBuf;
+
+    fn unique_history_path(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "broom_lib_history_test_{}_{}",
+            name,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("history.jsonl")
+    }
+
+    fn result_with_size(target_path: &str, size_bytes: u64) -> ProjectActionResult {
+        ProjectActionResult {
+            project_name: "dummy".to_string(),
+            project_path: PathBuf::from("/dummy"),
+            target_path: PathBuf::from(target_path),
+            level: CleaningLevel::Skipped,
+            original_size_bytes: size_bytes,
+            reclaimed_bytes: 0,
+            details: String::new(),
+            fingerprint_summary: None,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn record_history_at_returns_none_on_first_ever_run() {
+        let path = unique_history_path("first_run");
+        let results = vec![result_with_size("/repo/target", 100)];
+
+        let trend = record_history_at(&path, &results, 1_000_000_000);
+        assert!(trend.is_none(), "nothing to compare against yet");
+        assert_eq!(history::load_entries(&path).len(), 1);
+    }
+
+    #[test]
+    fn record_history_at_reports_growth_across_runs() {
+        let path = unique_history_path("growth");
+
+        let first = vec![result_with_size("/repo/target", 100)];
+        record_history_at(&path, &first, 1_000_000_000);
+
+        let second = vec![result_with_size("/repo/target", 400)];
+        let trend = record_history_at(&path, &second, 1_000_000_100).unwrap();
+
+        assert_eq!(trend.tracked_targets, 1);
+        assert_eq!(trend.oldest_total_bytes, 100);
+        assert_eq!(trend.current_total_bytes, 400);
+    }
 }

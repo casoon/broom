@@ -152,6 +152,24 @@ cargo broom registry --dry-run --format json ~/GitHub
 Errors produce a non-zero exit status. JSON reports are written to stdout; process
 errors are written to stderr.
 
+## History tracking
+
+`--history` (or `history = true` in `broom.toml`) is an opt-in, off-by-default flag
+that appends each target's resulting size to a rolling 14-day JSON Lines log at
+`~/.local/state/cargo-broom/history.jsonl`, one line per target per run. Entries
+older than 14 days are pruned automatically; dry runs are never recorded, since they
+do not reach the sizes they report.
+
+```bash
+cargo broom --yes --history ~/GitHub
+```
+
+Once a target has at least one prior entry, the report gains a `History` metric
+comparing the current size against that target's oldest still-retained entry —
+answering "is this growing back despite regular cleanup?" instead of only showing
+the current run's numbers. The same data is available under `history_trend` in
+`--format json` output for scripting.
+
 ## Configuration
 
 The first applicable configuration source is used in this order:
@@ -173,6 +191,8 @@ keep_size_mb = 50
 experimental_fine = false
 fine_only = false
 coarse_only = false
+trash = false
+history = false
 
 hidden = false
 ignore = ["archived-repo"]

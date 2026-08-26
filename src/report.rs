@@ -1,12 +1,13 @@
 use anyhow::Result;
 use runemark::{
     ColorMode, Console, ErrorBlock, Finding, FindingGroup, Location, Metric, NextStep, Report,
-    Tone, Verdict,
+    Tone, Trend, Verdict,
 };
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
 
+use crate::history::HistoryTrend;
 use crate::level_b::FingerprintSummary;
 
 pub fn format_bytes(bytes: u64) -> String {
@@ -58,6 +59,7 @@ pub struct BroomReportSummary {
     pub skipped_count: usize,
     pub error_count: usize,
     pub total_reclaimed_bytes: u64,
+    pub history_trend: Option<HistoryTrend>,
     pub results: Vec<ProjectActionResult>,
 }
 
@@ -110,6 +112,10 @@ fn render_tty_report(
             metric_label,
             format_bytes(summary.total_reclaimed_bytes),
         ));
+    }
+
+    if let Some(trend) = &summary.history_trend {
+        report = report.add_metric(history_metric(trend));
     }
 
     // Group A: Coarse Cleaned (Level A)
@@ -185,6 +191,26 @@ fn render_tty_report(
     }
 
     Ok(())
+}
+
+/// Turns a `HistoryTrend` (net drift since each tracked target's oldest still-retained
+/// `--history` entry) into a `runemark::Metric`: `Trend::Positive` when targets are net
+/// smaller than they were, `Trend::Negative` when they have grown back despite cleanup.
+fn history_metric(trend: &HistoryTrend) -> Metric {
+    let delta = trend.current_total_bytes as i64 - trend.oldest_total_bytes as i64;
+    let (direction, sign) = if delta <= 0 {
+        (Trend::Positive, "-")
+    } else {
+        (Trend::Negative, "+")
+    };
+    let delta_str = format!(
+        "{sign}{} over {}d ({} tracked)",
+        format_bytes(delta.unsigned_abs()),
+        crate::history::RETENTION_DAYS,
+        trend.tracked_targets
+    );
+
+    Metric::new("History", format_bytes(trend.current_total_bytes)).with_trend(direction, delta_str)
 }
 
 fn render_json_report(summary: &BroomReportSummary, out: &mut dyn Write) -> Result<()> {

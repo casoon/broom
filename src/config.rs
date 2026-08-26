@@ -12,6 +12,7 @@ pub struct BroomConfig {
     pub fine_only: Option<bool>,
     pub coarse_only: Option<bool>,
     pub trash: Option<bool>,
+    pub history: Option<bool>,
     pub hidden: Option<bool>,
     pub ignore: Option<Vec<String>>,
     pub skip: Option<Vec<String>>,
