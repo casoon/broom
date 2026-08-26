@@ -186,14 +186,12 @@ pub fn discover_targets(root: &Path, options: &DiscoverOptions) -> Result<Vec<Pr
 }
 
 fn read_crate_name_from_manifest(manifest_path: &Path) -> Option<String> {
-    if let Ok(content) = std::fs::read_to_string(manifest_path) {
-        if let Ok(toml_val) = toml::from_str::<toml::Value>(&content) {
-            if let Some(pkg) = toml_val.get("package") {
-                if let Some(name) = pkg.get("name").and_then(|n| n.as_str()) {
-                    return Some(name.to_string());
-                }
-            }
-        }
+    if let Ok(content) = std::fs::read_to_string(manifest_path)
+        && let Ok(toml_val) = toml::from_str::<toml::Value>(&content)
+        && let Some(pkg) = toml_val.get("package")
+        && let Some(name) = pkg.get("name").and_then(|n| n.as_str())
+    {
+        return Some(name.to_string());
     }
     None
 }
@@ -208,10 +206,10 @@ pub fn compute_directory_stats(dir: &Path) -> (u64, SystemTime) {
             if metadata.is_file() {
                 total_size += metadata.len();
             }
-            if let Ok(mtime) = metadata.modified() {
-                if mtime > latest_mtime {
-                    latest_mtime = mtime;
-                }
+            if let Ok(mtime) = metadata.modified()
+                && mtime > latest_mtime
+            {
+                latest_mtime = mtime;
             }
         }
     }
@@ -226,6 +224,29 @@ pub fn compute_directory_stats(dir: &Path) -> (u64, SystemTime) {
     (total_size, latest_mtime)
 }
 
+/// Returns true if a `cargo build` (or any other cargo invocation) currently holds the
+/// exclusive lock cargo itself uses to coordinate concurrent access to this target
+/// directory (`<target_dir>/.cargo-lock`). Callers must skip cleaning such a target
+/// instead of deleting or pruning files out from under a build that is in progress.
+///
+/// No lock file present means no cargo process has ever built here (or it predates
+/// locking), which is not itself a sign of an active build, so that case returns false.
+pub fn is_build_running(target_dir: &Path) -> bool {
+    let lock_path = target_dir.join(".cargo-lock");
+    let file = match std::fs::OpenOptions::new().write(true).open(&lock_path) {
+        Ok(file) => file,
+        Err(_) => return false,
+    };
+
+    match file.try_lock() {
+        Ok(()) => {
+            let _ = file.unlock();
+            false
+        }
+        Err(_) => true,
+    }
+}
+
 fn check_target_override(project_dir: &Path) -> bool {
     if std::env::var_os("CARGO_TARGET_DIR").is_some() {
         return true;
@@ -233,4 +254,47 @@ fn check_target_override(project_dir: &Path) -> bool {
     let config_toml = project_dir.join(".cargo").join("config.toml");
     let config = project_dir.join(".cargo").join("config");
     config_toml.exists() || config.exists()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+
+    fn unique_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "broom_discover_test_{}_{}",
+            name,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn is_build_running_false_when_no_lock_file_exists() {
+        let dir = unique_dir("no_lock");
+        assert!(!is_build_running(&dir));
+    }
+
+    #[test]
+    fn is_build_running_false_when_lock_file_is_unlocked() {
+        let dir = unique_dir("unlocked");
+        File::create(dir.join(".cargo-lock")).unwrap();
+        assert!(!is_build_running(&dir));
+    }
+
+    #[test]
+    fn is_build_running_true_while_lock_is_held() {
+        let dir = unique_dir("held");
+        let lock_path = dir.join(".cargo-lock");
+        let holder = File::create(&lock_path).unwrap();
+        holder.lock().unwrap();
+
+        assert!(is_build_running(&dir));
+
+        holder.unlock().unwrap();
+        assert!(!is_build_running(&dir));
+    }
 }

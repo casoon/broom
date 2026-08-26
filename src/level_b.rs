@@ -111,10 +111,10 @@ pub fn clean_fine(
                             .metadata()
                             .and_then(|m| m.modified())
                             .unwrap_or(SystemTime::UNIX_EPOCH);
-                        if let Ok(elapsed) = now.duration_since(mtime) {
-                            if elapsed >= age_threshold {
-                                files_to_remove.insert(p.to_path_buf());
-                            }
+                        if let Ok(elapsed) = now.duration_since(mtime)
+                            && elapsed >= age_threshold
+                        {
+                            files_to_remove.insert(p.to_path_buf());
                         }
                     }
                 }
@@ -305,10 +305,10 @@ fn compute_dir_mtime(dir: &Path) -> SystemTime {
         .unwrap_or(SystemTime::UNIX_EPOCH);
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.filter_map(|e| e.ok()) {
-            if let Ok(mtime) = entry.metadata().and_then(|m| m.modified()) {
-                if mtime > latest {
-                    latest = mtime;
-                }
+            if let Ok(mtime) = entry.metadata().and_then(|m| m.modified())
+                && mtime > latest
+            {
+                latest = mtime;
             }
         }
     }
@@ -320,42 +320,42 @@ fn collect_stale_artifacts(profile: &Path, fp: &FingerprintEntry, out: &mut Hash
 
     // Check profile/deps/
     let deps_dir = profile.join("deps");
-    if deps_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&deps_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let p = entry.path();
-                let file_name = p.file_name().unwrap_or_default().to_string_lossy();
-                if file_name.contains(&fp.hash) {
-                    out.insert(p);
-                }
+    if deps_dir.exists()
+        && let Ok(entries) = fs::read_dir(&deps_dir)
+    {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let p = entry.path();
+            let file_name = p.file_name().unwrap_or_default().to_string_lossy();
+            if file_name.contains(&fp.hash) {
+                out.insert(p);
             }
         }
     }
 
     // Check profile/build/
     let build_dir = profile.join("build");
-    if build_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&build_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let p = entry.path();
-                let file_name = p.file_name().unwrap_or_default().to_string_lossy();
-                if file_name.contains(&fp.hash) {
-                    out.insert(p);
-                }
+    if build_dir.exists()
+        && let Ok(entries) = fs::read_dir(&build_dir)
+    {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let p = entry.path();
+            let file_name = p.file_name().unwrap_or_default().to_string_lossy();
+            if file_name.contains(&fp.hash) {
+                out.insert(p);
             }
         }
     }
 
     // Check profile/native/
     let native_dir = profile.join("native");
-    if native_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&native_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let p = entry.path();
-                let file_name = p.file_name().unwrap_or_default().to_string_lossy();
-                if file_name.contains(&fp.hash) {
-                    out.insert(p);
-                }
+    if native_dir.exists()
+        && let Ok(entries) = fs::read_dir(&native_dir)
+    {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let p = entry.path();
+            let file_name = p.file_name().unwrap_or_default().to_string_lossy();
+            if file_name.contains(&fp.hash) {
+                out.insert(p);
             }
         }
     }

@@ -15,7 +15,7 @@ use runemark::{ColorMode, Console, ProgressMode, ProgressSink, TerminalProgress}
 use std::io::Write;
 use std::path::PathBuf;
 
-use discover::{DiscoverOptions, discover_targets};
+use discover::{DiscoverOptions, discover_targets, is_build_running};
 use interactive::{CandidateTarget, prompt_interactive_selection};
 use level_a::{LevelAOptions, clean_coarse, should_clean_coarse};
 use level_b::{LevelBOptions, clean_fine};
@@ -93,7 +93,27 @@ pub fn run_broom(opts: BroomRunnerOptions, out: &mut dyn Write) -> Result<()> {
         opts.experimental_fine || opts.tests_only || opts.clean_incremental || opts.clean_doc;
     let mut candidates = Vec::new();
     let mut skipped_count = 0;
+    let mut results = Vec::new();
     for target in targets {
+        if is_build_running(&target.target_path) {
+            // A running `cargo build` holds this target directory's lock; deleting or
+            // pruning files under it now could corrupt the in-progress build. Skip it
+            // outright rather than racing it, and say why instead of a silent no-op.
+            skipped_count += 1;
+            results.push(ProjectActionResult {
+                project_name: target.project_name.clone(),
+                project_path: target.project_path.clone(),
+                target_path: target.target_path.clone(),
+                level: CleaningLevel::Skipped,
+                original_size_bytes: target.size_bytes,
+                reclaimed_bytes: 0,
+                details: "Build in progress, skipped".to_string(),
+                fingerprint_summary: None,
+                error: None,
+            });
+            continue;
+        }
+
         let proposed_level = if !opts.fine_only && should_clean_coarse(&target, &level_a_opts) {
             CleaningLevel::Coarse
         } else if !opts.coarse_only && fine_requested {
@@ -133,7 +153,6 @@ pub fn run_broom(opts: BroomRunnerOptions, out: &mut dyn Write) -> Result<()> {
     let mut fine_count = 0;
     let mut error_count = 0;
     let mut total_reclaimed = 0u64;
-    let mut results = Vec::new();
 
     let is_tty = opts.output_format == OutputFormat::Tty;
     let progress_mode = if is_tty {

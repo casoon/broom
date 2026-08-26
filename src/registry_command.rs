@@ -53,22 +53,23 @@ pub fn run_registry(
     if cache_dir.exists() {
         for entry in WalkDir::new(&cache_dir).into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
-            if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("crate") {
-                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                    let crate_stem = &file_name[..file_name.len() - 6]; // strip .crate
-                    if let Some((name, version)) = split_crate_name_version(crate_stem) {
-                        let is_active =
-                            active_crates.contains(&(name.to_string(), version.to_string()));
-                        if !is_active {
-                            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                            total_reclaimable += size;
-                            unreferenced_files.push((
-                                path.to_path_buf(),
-                                name.to_string(),
-                                version.to_string(),
-                                size,
-                            ));
-                        }
+            if path.is_file()
+                && path.extension().and_then(|e| e.to_str()) == Some("crate")
+                && let Some(file_name) = path.file_name().and_then(|n| n.to_str())
+            {
+                let crate_stem = &file_name[..file_name.len() - 6]; // strip .crate
+                if let Some((name, version)) = split_crate_name_version(crate_stem) {
+                    let is_active =
+                        active_crates.contains(&(name.to_string(), version.to_string()));
+                    if !is_active {
+                        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                        total_reclaimable += size;
+                        unreferenced_files.push((
+                            path.to_path_buf(),
+                            name.to_string(),
+                            version.to_string(),
+                            size,
+                        ));
                     }
                 }
             }
@@ -150,24 +151,25 @@ pub fn run_registry(
 fn collect_active_lock_dependencies(root: &Path) -> HashSet<(String, String)> {
     let mut active = HashSet::new();
     for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
-        if entry.file_type().is_file() && entry.file_name() == "Cargo.lock" {
-            if let Ok(content) = fs::read_to_string(entry.path()) {
-                parse_cargo_lock_packages(&content, &mut active);
-            }
+        if entry.file_type().is_file()
+            && entry.file_name() == "Cargo.lock"
+            && let Ok(content) = fs::read_to_string(entry.path())
+        {
+            parse_cargo_lock_packages(&content, &mut active);
         }
     }
     active
 }
 
 fn parse_cargo_lock_packages(content: &str, out: &mut HashSet<(String, String)>) {
-    if let Ok(toml_val) = toml::from_str::<toml::Value>(content) {
-        if let Some(packages) = toml_val.get("package").and_then(|p| p.as_array()) {
-            for pkg in packages {
-                let name = pkg.get("name").and_then(|n| n.as_str());
-                let version = pkg.get("version").and_then(|v| v.as_str());
-                if let (Some(n), Some(v)) = (name, version) {
-                    out.insert((n.to_string(), v.to_string()));
-                }
+    if let Ok(toml_val) = toml::from_str::<toml::Value>(content)
+        && let Some(packages) = toml_val.get("package").and_then(|p| p.as_array())
+    {
+        for pkg in packages {
+            let name = pkg.get("name").and_then(|n| n.as_str());
+            let version = pkg.get("version").and_then(|v| v.as_str());
+            if let (Some(n), Some(v)) = (name, version) {
+                out.insert((n.to_string(), v.to_string()));
             }
         }
     }

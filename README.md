@@ -194,7 +194,8 @@ its executable, root, and log paths before loading it.
 
 ## Development
 
-The project requires Rust 1.85 or newer.
+The project requires Rust 1.89 or newer (for `std::fs::File::try_lock`, used to detect
+an in-progress build before cleaning its target directory).
 
 ```bash
 cargo fmt --check
@@ -205,9 +206,6 @@ cargo package
 
 CI runs formatting, Clippy, and tests on Linux, macOS, and Windows. The package uses
 the published `runemark` dependency and does not require a sibling repository.
-
-The longer-term product directions and technical constraints are documented in
-[plan/CONCEPT.md](plan/CONCEPT.md).
 
 ## License
 

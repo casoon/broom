@@ -41,10 +41,10 @@ pub fn run_toolchains(
     if let Ok(entries) = fs::read_dir(&toolchains_dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            if path.is_dir() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    installed_toolchains.push((name.to_string(), path));
-                }
+            if path.is_dir()
+                && let Some(name) = path.file_name().and_then(|n| n.to_str())
+            {
+                installed_toolchains.push((name.to_string(), path));
             }
         }
     }
@@ -113,19 +113,19 @@ fn collect_referenced_toolchains(root: &Path) -> HashSet<String> {
     let mut ref_set = HashSet::new();
     for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
         let name = entry.file_name().to_string_lossy();
-        if name == "rust-toolchain" || name == "rust-toolchain.toml" {
-            if let Ok(content) = fs::read_to_string(entry.path()) {
-                if let Ok(toml_val) = toml::from_str::<toml::Value>(&content) {
-                    if let Some(channel) = toml_val
-                        .get("toolchain")
-                        .and_then(|t| t.get("channel"))
-                        .and_then(|c| c.as_str())
-                    {
-                        ref_set.insert(channel.to_string());
-                    }
-                } else {
-                    ref_set.insert(content.trim().to_string());
+        if (name == "rust-toolchain" || name == "rust-toolchain.toml")
+            && let Ok(content) = fs::read_to_string(entry.path())
+        {
+            if let Ok(toml_val) = toml::from_str::<toml::Value>(&content) {
+                if let Some(channel) = toml_val
+                    .get("toolchain")
+                    .and_then(|t| t.get("channel"))
+                    .and_then(|c| c.as_str())
+                {
+                    ref_set.insert(channel.to_string());
                 }
+            } else {
+                ref_set.insert(content.trim().to_string());
             }
         }
     }

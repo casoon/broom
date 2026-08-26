@@ -2,7 +2,9 @@
 name = "cargo-broom"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+# 1.89 for std::fs::File::{try_lock,unlock} (running-build detection in discover.rs),
+# avoids pulling in a file-locking crate for one narrow check.
+rust-version = "1.89"
 description = "Conservative Cargo build-artifact cleaner for one or many Rust projects"
 license = "MIT"
 readme = "README.md"

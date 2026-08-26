@@ -332,6 +332,51 @@ fn test_run_broom_dry_run_json() {
     let _ = fs::remove_dir_all(ws);
 }
 
+/// Regression test: a target directory whose `.cargo-lock` is held by a running `cargo`
+/// process must be skipped entirely, even when it is otherwise eligible for an immediate
+/// coarse clean (`keep_days: 0`) and the run is non-interactive/auto-confirmed.
+#[test]
+fn test_run_broom_skips_target_with_active_build_lock() {
+    let ws = create_temp_workspace("locked_target");
+    let lock_path = ws.join("target").join(".cargo-lock");
+    let holder = fs::File::create(&lock_path).unwrap();
+    holder.lock().unwrap();
+
+    let mut out = Vec::new();
+    let opts = BroomRunnerOptions {
+        root_path: ws.clone(),
+        dry_run: false,
+        interactive: false,
+        auto_confirm: true,
+        keep_days: 0,
+        keep_size_bytes: None,
+        experimental_fine: false,
+        fine_only: false,
+        coarse_only: false,
+        tests_only: false,
+        clean_incremental: false,
+        clean_doc: false,
+        hidden: false,
+        skip: Vec::new(),
+        ignore: Vec::new(),
+        output_format: OutputFormat::Json,
+        color_mode: ColorMode::Never,
+    };
+
+    run_broom(opts, &mut out).unwrap();
+    let json_val: serde_json::Value = serde_json::from_slice(&out).unwrap();
+
+    assert_eq!(json_val["coarse_cleaned_count"], 0);
+    assert_eq!(json_val["skipped_count"], 1);
+    assert!(
+        ws.join("target").exists(),
+        "locked target dir must not be deleted"
+    );
+
+    holder.unlock().unwrap();
+    let _ = fs::remove_dir_all(ws);
+}
+
 #[test]
 fn cli_refuses_unconfirmed_cleanup() {
     let ws = create_temp_workspace("cli_unconfirmed");

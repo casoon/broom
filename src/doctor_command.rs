@@ -1,4 +1,4 @@
-use crate::discover::{DiscoverOptions, discover_targets};
+use crate::discover::{DiscoverOptions, discover_targets, is_build_running};
 use crate::report::{OutputFormat, format_bytes};
 use anyhow::Result;
 use runemark::{ColorMode, Console, Finding, FindingGroup, Location, Report, Tone, Verdict};
@@ -49,14 +49,13 @@ pub fn run_doctor(
             group = group.add_finding(finding);
         }
 
-        // Issue 3: Active cargo lock file
-        let lock_file = t.target_path.join(".cargo-lock");
-        if lock_file.exists() {
+        // Issue 3: a build currently holds this target's lock
+        if is_build_running(&t.target_path) {
             findings_count += 1;
             let finding = Finding::new(
                 Tone::Info,
                 format!(
-                    "{} has active `.cargo-lock` file (build in progress or unclean exit)",
+                    "{} has a build in progress (target directory is locked)",
                     t.project_name
                 ),
             )
