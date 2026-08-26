@@ -1,3 +1,4 @@
+pub mod budget_command;
 pub mod commands;
 pub mod config;
 pub mod discover;
@@ -37,6 +38,8 @@ pub struct BroomRunnerOptions {
     pub experimental_fine: bool,
     pub fine_only: bool,
     pub coarse_only: bool,
+    pub toolchains: Vec<String>,
+    pub installed: bool,
     pub tests_only: bool,
     pub clean_incremental: bool,
     pub clean_doc: bool,
@@ -142,8 +145,8 @@ pub fn run_broom(opts: BroomRunnerOptions, out: &mut dyn Write) -> Result<()> {
 
     let level_b_opts = LevelBOptions {
         keep_days: opts.keep_days,
-        toolchains: Vec::new(),
-        installed: false,
+        toolchains: opts.toolchains.clone(),
+        installed: opts.installed,
         experimental_fingerprints: opts.experimental_fine,
         tests_only: opts.tests_only,
         clean_incremental: opts.clean_incremental,

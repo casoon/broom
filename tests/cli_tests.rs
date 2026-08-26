@@ -43,6 +43,9 @@ version = "1.0.200"
     fs::create_dir_all(&deps_dir).unwrap();
 
     fs::write(fp_dir.join("invokation-12345"), "fp contents").unwrap();
+    // Real Cargo fingerprint dirs carry a `<kind>-<crate>.json` file with a `rustc`
+    // field; broom::level_b now requires one to accept the entry as valid.
+    fs::write(fp_dir.join("lib-dummy-pkg.json"), r#"{"rustc":42}"#).unwrap();
     fs::write(
         deps_dir.join("libdummy_pkg-1234567890abcdef.rlib"),
         "rlib binary bytes",
@@ -154,6 +157,7 @@ fn test_level_b_fine_cleaning() {
     let deps_dir = debug_dir.join("deps");
     fs::create_dir_all(&old_fp_dir).unwrap();
     fs::write(old_fp_dir.join("invokation-00000"), "old fp contents").unwrap();
+    fs::write(old_fp_dir.join("lib-dummy-pkg.json"), r#"{"rustc":42}"#).unwrap();
     fs::write(
         deps_dir.join("libdummy_pkg-0000000000000000.rlib"),
         "old rlib binary bytes",
@@ -312,6 +316,8 @@ fn test_run_broom_dry_run_json() {
         experimental_fine: false,
         fine_only: false,
         coarse_only: false,
+        toolchains: Vec::new(),
+        installed: false,
         tests_only: false,
         clean_incremental: false,
         clean_doc: false,
@@ -355,6 +361,8 @@ fn test_run_broom_skips_target_with_active_build_lock() {
         experimental_fine: false,
         fine_only: false,
         coarse_only: false,
+        toolchains: Vec::new(),
+        installed: false,
         tests_only: false,
         clean_incremental: false,
         clean_doc: false,

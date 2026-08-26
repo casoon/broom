@@ -8,7 +8,7 @@ use std::process::ExitCode;
 
 use broom::commands::Command;
 use broom::config::BroomConfig;
-use broom::report::OutputFormat;
+use broom::report::{OutputFormat, parse_size_string};
 use broom::{BroomRunnerOptions, run_broom};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, ValueEnum)]
@@ -67,6 +67,16 @@ pub struct Cli {
         ]
     )]
     pub coarse_only: bool,
+
+    /// Keep fingerprints built with these rustup toolchains (e.g. `stable`, `1.88.0`);
+    /// prune fingerprints built with any other toolchain. Repeatable.
+    #[arg(long, global = true, requires = "experimental_fine")]
+    pub toolchains: Vec<String>,
+
+    /// Keep fingerprints built with any currently installed rustup toolchain instead
+    /// of a specific --toolchains list
+    #[arg(long, global = true, requires = "experimental_fine")]
+    pub installed: bool,
 
     /// Target compiled test binaries in deps/ specifically
     #[arg(long, global = true, requires = "experimental_fine")]
@@ -215,6 +225,8 @@ pub fn run(mut cli: Cli, out: &mut dyn Write) -> Result<()> {
         experimental_fine,
         fine_only,
         coarse_only,
+        toolchains: cli.toolchains,
+        installed: cli.installed,
         tests_only: cli.tests_only,
         clean_incremental: cli.clean_incremental,
         clean_doc: cli.clean_doc,
@@ -228,38 +240,6 @@ pub fn run(mut cli: Cli, out: &mut dyn Write) -> Result<()> {
     };
 
     run_broom(opts, out)
-}
-
-fn parse_size_string(s: Option<&str>) -> Result<Option<u64>> {
-    let Some(s) = s else {
-        return Ok(None);
-    };
-    let s = s.trim();
-    if s.is_empty() {
-        anyhow::bail!("--keep-size must not be empty");
-    }
-    let lower = s.to_lowercase();
-    let parsed = if let Some(num_str) = lower.strip_suffix("mb") {
-        parse_scaled_size(num_str, 1024 * 1024)
-    } else if let Some(num_str) = lower.strip_suffix("gb") {
-        parse_scaled_size(num_str, 1024 * 1024 * 1024)
-    } else if let Some(num_str) = lower.strip_suffix("kb") {
-        parse_scaled_size(num_str, 1024)
-    } else if let Some(num_str) = lower.strip_suffix('b') {
-        parse_scaled_size(num_str, 1)
-    } else {
-        parse_scaled_size(s, 1)
-    }
-    .with_context(|| format!("invalid --keep-size value `{s}`"))?;
-    Ok(Some(parsed))
-}
-
-fn parse_scaled_size(value: &str, multiplier: u64) -> Result<u64> {
-    value
-        .trim()
-        .parse::<u64>()?
-        .checked_mul(multiplier)
-        .context("size value is too large")
 }
 
 fn expand_tilde(path: PathBuf) -> Result<PathBuf> {

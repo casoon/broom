@@ -1,8 +1,11 @@
 use anyhow::{Context, Result};
+use rustc_stable_hash::StableSipHasher128;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{Duration, SystemTime};
 use walkdir::WalkDir;
 
@@ -20,7 +23,12 @@ pub struct FingerprintSummary {
 #[derive(Debug, Clone)]
 pub struct LevelBOptions {
     pub keep_days: u64,
+    /// Rustup toolchain names (e.g. `stable`, `1.88.0`) whose rustc hash fingerprints
+    /// should be kept. Any fingerprint built with a different rustc is stale,
+    /// regardless of age. Takes precedence over `installed` when non-empty.
     pub toolchains: Vec<String>,
+    /// Keep fingerprints built with any currently `rustup`-installed toolchain
+    /// instead of a specific list. Ignored when `toolchains` is non-empty.
     pub installed: bool,
     pub experimental_fingerprints: bool,
     pub tests_only: bool,
@@ -49,6 +57,18 @@ struct FingerprintEntry {
     pub crate_name: String,
     pub hash: String,
     pub mtime: SystemTime,
+    /// The `rustc` field from the entry's own fingerprint JSON file: a hash of the
+    /// `rustc -vV` output of the toolchain it was built with.
+    pub rustc_hash: u64,
+}
+
+/// The subset of a Cargo fingerprint JSON file (`.fingerprint/<pkg>-<hash>/*.json`)
+/// this module cares about. Cargo's own struct has many more fields (features,
+/// target, profile, deps, ...); unknown fields are ignored by serde by default, so
+/// this stays forward-compatible with newer Cargo versions that add fields.
+#[derive(Debug, Deserialize)]
+struct Fingerprint {
+    rustc: u64,
 }
 
 /// Performs fine-grained fingerprint pruning (Level B) within target profiles (debug, release, etc.)
@@ -69,6 +89,16 @@ pub fn clean_fine(
     }
 
     let mut files_to_remove: HashSet<PathBuf> = HashSet::new();
+
+    // `Some(hashes)` when --toolchains or --installed selects specific toolchains to
+    // keep: any fingerprint whose rustc hash isn't in this set is stale regardless of
+    // age. `None` disables toolchain-based filtering entirely (pure age/duplicate
+    // heuristics, the pre-existing behavior).
+    let toolchain_hashes = if options.experimental_fingerprints {
+        resolve_toolchain_rustc_hashes(options)?
+    } else {
+        None
+    };
 
     // Clean target/doc if --clean-doc is requested
     if options.clean_doc {
@@ -157,23 +187,29 @@ pub fn clean_fine(
 
         for (_crate_name, mut crate_fps) in grouped {
             if crate_fps.len() <= 1 {
-                // Single fingerprint for crate, check if it's expired
+                // Single fingerprint for crate, check if it's expired or built with a
+                // toolchain that is no longer kept.
                 let fp = &crate_fps[0];
                 let is_old = now
                     .duration_since(fp.mtime)
                     .map(|e| e >= age_threshold)
                     .unwrap_or(false);
-                if is_old {
+                let is_toolchain_mismatch = is_toolchain_stale(fp, &toolchain_hashes);
+                if is_old || is_toolchain_mismatch {
                     stale_fingerprints += 1;
                     collect_stale_artifacts(&profile, fp, &mut files_to_remove);
                 }
             } else {
                 // Multiple fingerprints for crate: sort by mtime descending
                 crate_fps.sort_by_key(|entry| std::cmp::Reverse(entry.mtime));
-                // Keep newest fingerprint (index 0), mark all older ones as stale
-                for fp in crate_fps.iter().skip(1) {
-                    stale_fingerprints += 1;
-                    collect_stale_artifacts(&profile, fp, &mut files_to_remove);
+                // Keep newest fingerprint (index 0) unless it no longer matches a kept
+                // toolchain; mark all older ones as stale regardless.
+                for (i, fp) in crate_fps.iter().enumerate() {
+                    let is_toolchain_mismatch = is_toolchain_stale(fp, &toolchain_hashes);
+                    if i > 0 || is_toolchain_mismatch {
+                        stale_fingerprints += 1;
+                        collect_stale_artifacts(&profile, fp, &mut files_to_remove);
+                    }
                 }
             }
         }
@@ -207,6 +243,113 @@ pub fn clean_fine(
         reclaimed_bytes,
         unsupported_fingerprint_data: false,
     })
+}
+
+/// True when toolchain-based filtering is active and `fp`'s rustc hash isn't in the
+/// kept set. `None` (no `--toolchains`/`--installed`) always returns `false`.
+fn is_toolchain_stale(fp: &FingerprintEntry, toolchain_hashes: &Option<HashSet<u64>>) -> bool {
+    toolchain_hashes
+        .as_ref()
+        .is_some_and(|kept| !kept.contains(&fp.rustc_hash))
+}
+
+/// This has to match the way Cargo hashes a rustc version into a fingerprint's
+/// `rustc` field. Ported from `cargo-sweep` (MIT), which in turn mirrors Cargo's own
+/// (unstable, internal) hashing.
+fn hash_u64<H: Hash>(hashable: &H) -> u64 {
+    let mut hasher = StableSipHasher128::new();
+    hashable.hash(&mut hasher);
+    Hasher::finish(&hasher)
+}
+
+/// The hash algorithm Cargo used prior to Rust 1.85.0. Fingerprints from toolchains
+/// older than that still carry hashes computed this way, so both are checked.
+#[allow(deprecated)]
+fn hash_u64_old<H: Hash>(hashable: &H) -> u64 {
+    let mut hasher = std::hash::SipHasher::new_with_keys(0, 0);
+    hashable.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Runs `rustc [+toolchain] -vV` and returns both the current and the pre-1.85 hash
+/// of its output, matching whichever algorithm actually produced the `rustc` field
+/// in an on-disk fingerprint built by that toolchain.
+fn hash_rustc_version(toolchain: Option<&str>) -> Result<[u64; 2]> {
+    let mut cmd = Command::new("rustc");
+    if let Some(toolchain) = toolchain {
+        cmd.arg(format!("+{toolchain}"));
+    }
+    cmd.arg("-vV");
+    let output = cmd.output().context("failed to run `rustc`")?;
+    if !output.status.success() {
+        let toolchain_label = toolchain.unwrap_or("default");
+        anyhow::bail!(
+            "failed to determine rustc version for toolchain `{toolchain_label}`: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let version_str = String::from_utf8_lossy(&output.stdout).to_string();
+    Ok([hash_u64(&version_str), hash_u64_old(&version_str)])
+}
+
+/// Lists installed rustup toolchain names via `rustup toolchain list`, or `None` if
+/// `rustup` itself isn't available.
+fn installed_toolchain_names() -> Option<Vec<String>> {
+    let output = Command::new("rustup")
+        .args(["toolchain", "list"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.split_whitespace().next())
+            .map(|name| name.trim().to_string())
+            .collect(),
+    )
+}
+
+/// Resolves `--toolchains`/`--installed` into the set of rustc hashes to keep, or
+/// `None` if neither is set (toolchain-based filtering disabled). A fingerprint's
+/// build script output can carry a `rustc` hash of `0`; that is always kept, mirroring
+/// `cargo-sweep`.
+fn resolve_toolchain_rustc_hashes(options: &LevelBOptions) -> Result<Option<HashSet<u64>>> {
+    if options.toolchains.is_empty() && !options.installed {
+        return Ok(None);
+    }
+
+    let mut hashes = HashSet::new();
+    hashes.insert(0);
+
+    if !options.toolchains.is_empty() {
+        for toolchain in &options.toolchains {
+            for hash in hash_rustc_version(Some(toolchain))? {
+                hashes.insert(hash);
+            }
+        }
+        return Ok(Some(hashes));
+    }
+
+    match installed_toolchain_names() {
+        Some(names) if !names.is_empty() => {
+            for name in names {
+                for hash in hash_rustc_version(Some(&name))? {
+                    hashes.insert(hash);
+                }
+            }
+        }
+        // No rustup, or rustup reports no toolchains: fall back to the bare `rustc`
+        // on PATH, same as cargo-sweep.
+        _ => {
+            for hash in hash_rustc_version(None)? {
+                hashes.insert(hash);
+            }
+        }
+    }
+
+    Ok(Some(hashes))
 }
 
 fn compute_path_bytes(path: &Path) -> u64 {
@@ -272,6 +415,12 @@ fn parse_fingerprint_dir(fp_dir: &Path) -> Result<Vec<FingerprintEntry>> {
                     entry_path.display()
                 )
             })?;
+            let rustc_hash = load_fingerprint_json(&entry_path).with_context(|| {
+                format!(
+                    "unreadable or unsupported fingerprint JSON in: {}",
+                    entry_path.display()
+                )
+            })?;
             let mtime = compute_dir_mtime(&entry_path);
             let crate_name_str = crate_name.to_string();
             let hash_str = hash.to_string();
@@ -280,11 +429,34 @@ fn parse_fingerprint_dir(fp_dir: &Path) -> Result<Vec<FingerprintEntry>> {
                 crate_name: crate_name_str,
                 hash: hash_str,
                 mtime,
+                rustc_hash,
             });
         }
     }
 
     Ok(entries)
+}
+
+/// Loads the `rustc` field from the fingerprint dir's `.json` file, validating that
+/// this is really a Cargo fingerprint entry rather than a directory that merely
+/// matches the `<crate>-<hash>` naming pattern by coincidence. Mirrors
+/// `cargo-sweep`'s `Fingerprint::load`: cargo does not fix the JSON file's name
+/// (`lib-<crate>.json`, `bin-<crate>.json`, `run-build-script-<crate>.json`, ...), so
+/// this reads the first `.json` file found that parses successfully.
+fn load_fingerprint_json(fingerprint_dir: &Path) -> Result<u64> {
+    for entry in fs::read_dir(fingerprint_dir)? {
+        let path = entry?.path();
+        if path.extension().is_some_and(|ext| ext == "json") {
+            let contents = fs::read_to_string(&path)?;
+            if let Ok(fingerprint) = serde_json::from_str::<Fingerprint>(&contents) {
+                return Ok(fingerprint.rustc);
+            }
+        }
+    }
+    anyhow::bail!(
+        "no parseable fingerprint JSON file found in {}",
+        fingerprint_dir.display()
+    )
 }
 
 fn split_crate_hash(folder_name: &str) -> Option<(&str, &str)> {
@@ -426,6 +598,11 @@ mod tests {
         }
     }
 
+    /// Arbitrary rustc hash used by tests that don't exercise `--toolchains`/`--installed`
+    /// filtering, where the exact value doesn't matter (toolchain-based filtering stays
+    /// off unless `LevelBOptions.toolchains`/`installed` is set).
+    const DEFAULT_RUSTC_HASH: u64 = 42;
+
     /// Creates `target/debug/.fingerprint/<crate_name>-<hash>/` plus matching
     /// `deps/<crate_name>-<hash>` and `build/<crate_name>-<hash>` artifacts, and sets
     /// the fingerprint directory's mtime to `age`.
@@ -434,6 +611,7 @@ mod tests {
         crate_name: &str,
         hash: &str,
         age: SystemTime,
+        rustc_hash: u64,
     ) -> PathBuf {
         let fp_dir = target_dir
             .join("debug")
@@ -442,9 +620,14 @@ mod tests {
         fs::create_dir_all(&fp_dir).unwrap();
         let dep_lib = fp_dir.join("dep-lib");
         fs::write(&dep_lib, b"fingerprint").unwrap();
-        // compute_dir_mtime() takes the newest of the dir itself and its children, so the
-        // child file must be aged too or the dir's own aged mtime gets overridden.
+        // Real Cargo fingerprint dirs carry a `<kind>-<crate>.json` file with a `rustc`
+        // field; load_fingerprint_json() now requires one to accept the entry as valid.
+        let fp_json = fp_dir.join(format!("lib-{}.json", crate_name));
+        fs::write(&fp_json, format!(r#"{{"rustc":{}}}"#, rustc_hash)).unwrap();
+        // compute_dir_mtime() takes the newest of the dir itself and its children, so
+        // every child file must be aged too or the dir's own aged mtime gets overridden.
         set_mtime(&dep_lib, age);
+        set_mtime(&fp_json, age);
 
         let deps_dir = target_dir.join("debug").join("deps");
         fs::create_dir_all(&deps_dir).unwrap();
@@ -506,8 +689,20 @@ mod tests {
     fn clean_fine_keeps_newest_removes_older_duplicate_for_same_crate() {
         let root = unique_dir("dup");
         let target_dir = root.join("target");
-        let old_fp = make_fingerprint(&target_dir, "mycrate", "1111111111111111", days_ago(60));
-        let new_fp = make_fingerprint(&target_dir, "mycrate", "2222222222222222", days_ago(1));
+        let old_fp = make_fingerprint(
+            &target_dir,
+            "mycrate",
+            "1111111111111111",
+            days_ago(60),
+            DEFAULT_RUSTC_HASH,
+        );
+        let new_fp = make_fingerprint(
+            &target_dir,
+            "mycrate",
+            "2222222222222222",
+            days_ago(1),
+            DEFAULT_RUSTC_HASH,
+        );
 
         let target = make_project_target(&root);
         let options = LevelBOptions {
@@ -530,7 +725,13 @@ mod tests {
     fn clean_fine_removes_single_fingerprint_older_than_threshold() {
         let root = unique_dir("single_old");
         let target_dir = root.join("target");
-        let fp = make_fingerprint(&target_dir, "mycrate", "1111111111111111", days_ago(30));
+        let fp = make_fingerprint(
+            &target_dir,
+            "mycrate",
+            "1111111111111111",
+            days_ago(30),
+            DEFAULT_RUSTC_HASH,
+        );
 
         let target = make_project_target(&root);
         let options = LevelBOptions {
@@ -563,7 +764,13 @@ mod tests {
     fn clean_fine_keeps_single_fingerprint_within_threshold() {
         let root = unique_dir("single_fresh");
         let target_dir = root.join("target");
-        let fp = make_fingerprint(&target_dir, "mycrate", "1111111111111111", days_ago(1));
+        let fp = make_fingerprint(
+            &target_dir,
+            "mycrate",
+            "1111111111111111",
+            days_ago(1),
+            DEFAULT_RUSTC_HASH,
+        );
 
         let target = make_project_target(&root);
         let options = LevelBOptions {
@@ -581,7 +788,13 @@ mod tests {
     fn clean_fine_dry_run_does_not_delete_anything() {
         let root = unique_dir("dry_run");
         let target_dir = root.join("target");
-        let fp = make_fingerprint(&target_dir, "mycrate", "1111111111111111", days_ago(30));
+        let fp = make_fingerprint(
+            &target_dir,
+            "mycrate",
+            "1111111111111111",
+            days_ago(30),
+            DEFAULT_RUSTC_HASH,
+        );
 
         let target = make_project_target(&root);
         let options = LevelBOptions {
@@ -603,7 +816,13 @@ mod tests {
 
         let root = unique_dir("unreadable");
         let target_dir = root.join("target");
-        make_fingerprint(&target_dir, "mycrate", "1111111111111111", days_ago(30));
+        make_fingerprint(
+            &target_dir,
+            "mycrate",
+            "1111111111111111",
+            days_ago(30),
+            DEFAULT_RUSTC_HASH,
+        );
 
         let fp_parent = target_dir.join("debug").join(".fingerprint");
         fs::set_permissions(&fp_parent, fs::Permissions::from_mode(0o000)).unwrap();
@@ -622,6 +841,146 @@ mod tests {
         assert!(
             result.unsupported_fingerprint_data,
             "unreadable fingerprint dir must degrade to Level A, not crash or silently no-op"
+        );
+    }
+
+    // --- Cargo-aware fingerprint JSON validation ---
+    //
+    // Expected hash values below were computed once with `rustc-stable-hash` /
+    // `std::hash::SipHasher` directly against the fixed fixture strings (not against
+    // this machine's installed rustc), so these tests are portable across CI runners
+    // and don't depend on which rustc version happens to be installed.
+
+    #[test]
+    fn hash_u64_matches_known_fixture() {
+        let fixture =
+            "rustc 1.75.0 (82e1608df 2023-12-21)\nbinary: rustc\nhost: x86_64-unknown-linux-gnu\n"
+                .to_string();
+        assert_eq!(hash_u64(&fixture), 7566640334266345872);
+    }
+
+    #[test]
+    fn hash_u64_old_matches_known_fixture() {
+        let fixture =
+            "rustc 1.75.0 (82e1608df 2023-12-21)\nbinary: rustc\nhost: x86_64-unknown-linux-gnu\n"
+                .to_string();
+        assert_eq!(hash_u64_old(&fixture), 8083042295820737217);
+    }
+
+    #[test]
+    fn hash_u64_differs_for_different_rustc_versions() {
+        // Two distinct toolchains must not collide, or --toolchains/--installed
+        // filtering would keep fingerprints built by the wrong compiler.
+        let v1 = "rustc 1.75.0 (82e1608df 2023-12-21)\n".to_string();
+        let v2 = "rustc 1.95.0 (59807616e 2026-04-14)\n".to_string();
+        assert_ne!(hash_u64(&v1), hash_u64(&v2));
+    }
+
+    #[test]
+    fn load_fingerprint_json_reads_rustc_field() {
+        let dir = unique_dir("json_valid");
+        fs::write(dir.join("lib-mycrate.json"), r#"{"rustc":12345}"#).unwrap();
+        assert_eq!(load_fingerprint_json(&dir).unwrap(), 12345);
+    }
+
+    #[test]
+    fn load_fingerprint_json_ignores_unknown_fields() {
+        // A real fingerprint JSON carries many more fields (features, target, profile,
+        // deps, local, rustflags, config, compile_kind, ...) that vary across Cargo
+        // versions. Parsing must not require or choke on any of them.
+        let dir = unique_dir("json_extra_fields");
+        let real_shaped_json = r#"{"rustc":2179919275645516985,"features":"[\"default\"]","declared_features":"[\"default\"]","target":6810695588070812737,"profile":5347358027863023418,"path":4770492767391667477,"deps":[[1,"dep",false,2]],"local":[{"CheckDepInfo":{"dep_info":"debug/.fingerprint/x/dep-lib-x","checksum":false}}],"rustflags":[],"config":8247474407144887393,"compile_kind":0}"#;
+        fs::write(dir.join("lib-mycrate.json"), real_shaped_json).unwrap();
+        assert_eq!(load_fingerprint_json(&dir).unwrap(), 2179919275645516985);
+    }
+
+    #[test]
+    fn load_fingerprint_json_rejects_missing_rustc_field() {
+        let dir = unique_dir("json_missing_field");
+        fs::write(dir.join("lib-mycrate.json"), r#"{"features":"[]"}"#).unwrap();
+        assert!(load_fingerprint_json(&dir).is_err());
+    }
+
+    #[test]
+    fn load_fingerprint_json_rejects_malformed_json() {
+        let dir = unique_dir("json_malformed");
+        fs::write(dir.join("lib-mycrate.json"), "not json at all").unwrap();
+        assert!(load_fingerprint_json(&dir).is_err());
+    }
+
+    #[test]
+    fn load_fingerprint_json_rejects_missing_json_file() {
+        let dir = unique_dir("json_missing_file");
+        fs::write(dir.join("dep-lib-mycrate"), "binary dep-info, not JSON").unwrap();
+        assert!(load_fingerprint_json(&dir).is_err());
+    }
+
+    #[test]
+    fn clean_fine_treats_fingerprint_dir_without_json_as_unsupported() {
+        // Folder name matches the `<crate>-<hash>` pattern, but there is no fingerprint
+        // JSON at all (e.g. an unexpected future Cargo layout). Must degrade the whole
+        // project to Level A instead of guessing from the directory name alone.
+        let root = unique_dir("no_json");
+        let target_dir = root.join("target");
+        let fp_dir = target_dir
+            .join("debug")
+            .join(".fingerprint")
+            .join("mycrate-1111111111111111");
+        fs::create_dir_all(&fp_dir).unwrap();
+        fs::write(fp_dir.join("dep-lib"), b"fingerprint").unwrap();
+
+        let target = make_project_target(&root);
+        let options = LevelBOptions {
+            keep_days: 14,
+            experimental_fingerprints: true,
+            ..Default::default()
+        };
+        let result = clean_fine(&target, &options, false).unwrap();
+
+        assert!(result.unsupported_fingerprint_data);
+    }
+
+    #[test]
+    fn clean_fine_prunes_fingerprints_built_with_a_different_toolchain() {
+        // Isolates toolchain-hash filtering from the age/duplicate heuristics: two
+        // different crates, each with a single fresh fingerprint (age well within
+        // keep_days), so only a toolchain mismatch can make either one stale.
+        let root = unique_dir("toolchain_filter");
+        let target_dir = root.join("target");
+
+        let current_hash = hash_rustc_version(None).expect("rustc must be on PATH to run tests")[0];
+        let kept = make_fingerprint(
+            &target_dir,
+            "keptcrate",
+            "1111111111111111",
+            days_ago(1),
+            current_hash,
+        );
+        let pruned = make_fingerprint(
+            &target_dir,
+            "prunedcrate",
+            "2222222222222222",
+            days_ago(1),
+            0xDEAD_BEEF,
+        );
+
+        let target = make_project_target(&root);
+        let options = LevelBOptions {
+            keep_days: 14,
+            experimental_fingerprints: true,
+            installed: true,
+            ..Default::default()
+        };
+        let summary = clean_fine(&target, &options, false).unwrap();
+
+        assert_eq!(summary.stale_fingerprints, 1);
+        assert!(
+            !pruned.exists(),
+            "fingerprint built with a different rustc must be pruned"
+        );
+        assert!(
+            kept.exists(),
+            "fingerprint matching the current toolchain must survive"
         );
     }
 }

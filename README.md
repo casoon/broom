@@ -50,6 +50,11 @@ the project scan begins.
   outside the workspace are never removed wholesale.
 - A fingerprint parser error skips fine cleanup for that project. It never falls
   back to deleting the complete target.
+- Staleness is judged by `mtime`, not `atime`. `atime` is unreliable on
+  `noatime`/`relatime` mounts (common on CI runners and some macOS setups), where it
+  is not updated on every read or only coarsely, so recently-scanned-but-unused
+  artifacts look falsely "recent". `mtime` is written on every actual Cargo build
+  and does not have this problem.
 - A target directory currently locked by a running `cargo` process is skipped
   entirely, at both cleanup levels, instead of racing the build.
 - Filesystem deletion errors are reported and produce a failing exit status.
@@ -69,6 +74,8 @@ use `--dry-run` before enabling an automated job.
 | `--clean-incremental` | Targets not selected for Level A | `target/*/incremental` caches |
 | `--clean-doc` | Targets not selected for Level A | Generated `target/doc` output |
 | `--experimental-fine` | Targets not selected for Level A | Fingerprints and matching hashed artifacts selected by experimental age and duplicate heuristics |
+| `--toolchains <LIST>` | Modifier for `--experimental-fine` | Also prunes fingerprints built with a rustc other than the named toolchain(s) |
+| `--installed` | Modifier for `--experimental-fine` | Same, but keeps any currently `rustup`-installed toolchain instead of a specific list |
 | `--fine-only` | Disables Level A | Only explicitly requested fine operations |
 | `--trash` | Modifier for Level A, any policy above | Moves the target to the OS trash/recycle bin instead of deleting it permanently |
 
@@ -87,13 +94,22 @@ cargo broom --yes --clean-incremental --clean-doc ~/GitHub
 # Review experimental fingerprint pruning
 cargo broom --dry-run --experimental-fine ~/GitHub
 
+# Also prune fingerprints from toolchains rustup no longer has installed
+cargo broom --dry-run --experimental-fine --installed ~/GitHub
+
 # Never remove a complete target
 cargo broom --yes --fine-only --clean-incremental --clean-doc ~/GitHub
 ```
 
 `--fine-only` requires `--experimental-fine`, `--clean-incremental`, or
-`--clean-doc`. `--tests-only` requires `--experimental-fine`. Conflicting mode
-combinations are rejected by the CLI.
+`--clean-doc`. `--tests-only`, `--toolchains`, and `--installed` require
+`--experimental-fine`. Conflicting mode combinations are rejected by the CLI.
+
+`--experimental-fine` validates each fingerprint entry against its own JSON file
+(the `rustc` hash Cargo records there) rather than trusting the `.fingerprint/`
+directory naming pattern alone; an entry with no parseable fingerprint JSON marks
+the whole project unsupported for fine cleanup instead of guessing (see Safety
+guarantees above).
 
 ## Commands
 
@@ -103,6 +119,7 @@ combinations are rejected by the CLI.
 cargo broom inspect [DIR]
 cargo broom doctor [DIR]
 cargo broom toolchains [DIR]
+cargo broom budget [DIR] --limit 50GB
 ```
 
 - `inspect` lists discovered targets and their disk usage without applying cleanup
@@ -111,6 +128,10 @@ cargo broom toolchains [DIR]
   findings.
 - `toolchains` reports installed rustup toolchains that are not referenced by a
   `rust-toolchain` file below `DIR`. It does not uninstall anything.
+- `budget` reports total target disk usage across all discovered projects and, with
+  `--limit`, flags when that total exceeds the budget together with the largest
+  contributors. This is a whole-tree budget, unlike `--keep-size`, which is a
+  per-project Level A threshold. Analysis only; it never deletes anything.
 
 ### Clean one project
 
@@ -262,3 +283,7 @@ the published `runemark` dependency and does not require a sibling repository.
 ## License
 
 MIT
+
+The rustc-version hashing in `--toolchains`/`--installed` (`src/level_b.rs`) is
+ported from [`cargo-sweep`](https://github.com/holmgr/cargo-sweep) (MIT), which
+mirrors Cargo's own internal fingerprint hash.

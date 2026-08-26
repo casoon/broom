@@ -4,10 +4,11 @@ use runemark::ColorMode;
 use std::io::Write;
 use std::path::PathBuf;
 
+use crate::budget_command::run_budget;
 use crate::doctor_command::run_doctor;
 use crate::inspect_command::run_inspect;
 use crate::registry_command::run_registry;
-use crate::report::OutputFormat;
+use crate::report::{OutputFormat, parse_size_string};
 use crate::toolchains_command::run_toolchains;
 
 #[derive(Debug, Subcommand)]
@@ -22,6 +23,8 @@ pub enum Command {
     Registry(RegistryArgs),
     /// Inspect installed rustup toolchains and detect unused toolchains
     Toolchains(ToolchainsArgs),
+    /// Report total target disk usage across all discovered projects against a budget
+    Budget(BudgetArgs),
 }
 
 #[derive(Debug, Args)]
@@ -52,6 +55,17 @@ pub struct RegistryArgs {
 pub struct ToolchainsArgs {
     /// Target root directory containing projects to analyze (default: current directory)
     pub path: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+pub struct BudgetArgs {
+    /// Target root directory containing projects to analyze (default: current directory)
+    pub path: Option<PathBuf>,
+
+    /// Total size budget across all discovered target directories (e.g. 50GB). Without
+    /// it, budget only reports current total usage.
+    #[arg(long)]
+    pub limit: Option<String>,
 }
 
 impl Command {
@@ -85,6 +99,11 @@ impl Command {
             Command::Toolchains(args) => {
                 let root = args.path.unwrap_or_else(|| PathBuf::from("."));
                 run_toolchains(&root, output_format, color_mode, out)
+            }
+            Command::Budget(args) => {
+                let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+                let limit_bytes = parse_size_string(args.limit.as_deref())?;
+                run_budget(&root, limit_bytes, output_format, color_mode, out)
             }
         }
     }

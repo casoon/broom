@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use runemark::{
     ColorMode, Console, ErrorBlock, Finding, FindingGroup, Location, Metric, NextStep, Report,
     Tone, Trend, Verdict,
@@ -217,4 +217,38 @@ fn render_json_report(summary: &BroomReportSummary, out: &mut dyn Write) -> Resu
     let json = serde_json::to_string_pretty(summary)?;
     writeln!(out, "{}", json)?;
     Ok(())
+}
+
+/// Parses a human size string like `50MB`, `1GB`, or a plain byte count. Shared by
+/// `--keep-size` and `budget --limit`.
+pub fn parse_size_string(s: Option<&str>) -> Result<Option<u64>> {
+    let Some(s) = s else {
+        return Ok(None);
+    };
+    let s = s.trim();
+    if s.is_empty() {
+        anyhow::bail!("size value must not be empty");
+    }
+    let lower = s.to_lowercase();
+    let parsed = if let Some(num_str) = lower.strip_suffix("mb") {
+        parse_scaled_size(num_str, 1024 * 1024)
+    } else if let Some(num_str) = lower.strip_suffix("gb") {
+        parse_scaled_size(num_str, 1024 * 1024 * 1024)
+    } else if let Some(num_str) = lower.strip_suffix("kb") {
+        parse_scaled_size(num_str, 1024)
+    } else if let Some(num_str) = lower.strip_suffix('b') {
+        parse_scaled_size(num_str, 1)
+    } else {
+        parse_scaled_size(s, 1)
+    }
+    .with_context(|| format!("invalid size value `{s}`"))?;
+    Ok(Some(parsed))
+}
+
+fn parse_scaled_size(value: &str, multiplier: u64) -> Result<u64> {
+    value
+        .trim()
+        .parse::<u64>()?
+        .checked_mul(multiplier)
+        .context("size value is too large")
 }
