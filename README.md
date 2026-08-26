@@ -220,6 +220,30 @@ cargo broom --yes --coarse-only --keep-days 14 --keep-size 50MB ~/GitHub
 The included `de.casoon.cargo-broom.plist` is a machine-specific example. Adjust
 its executable, root, and log paths before loading it.
 
+## CI build caches
+
+`cargo-broom` targets a developer machine with many long-lived local checkouts,
+cleaned up periodically by age and size. It is not a fit for a `target/` directory
+persisted across CI runs (e.g. via `actions/cache`): that cache grows for a
+different reason — every dependency bump leaves behind fingerprints from the
+previous `Cargo.lock` state — and calls for cache-key-based or content-addressed
+invalidation instead of an age heuristic. For that case, prefer a tool built for it:
+
+- **[`Swatinem/rust-cache`](https://github.com/Swatinem/rust-cache)** — GitHub
+  Action that keys the cache on `Cargo.lock` plus toolchain version and prunes
+  known-safe-to-drop paths (`incremental/`, final binaries) before saving. The
+  default choice for GitHub Actions.
+- **[`sccache`](https://github.com/mozilla/sccache) with a remote backend** (S3,
+  GCS, or the GitHub Actions cache backend) — content-addressed compiler cache, so
+  entries are looked up by input hash rather than file age; sidesteps staleness
+  entirely.
+- **[`cargo-chef`](https://github.com/LukeMathWalker/cargo-chef)** — for
+  Docker-based pipelines, separates dependency compilation from application
+  compilation into distinct, correctly invalidated Docker layers.
+- **Registry-only caching** — cache just `~/.cargo/registry` and `~/.cargo/git`
+  and skip `target/` altogether. Simpler, and often enough when CI runners are
+  fast and dependency compilation dominates build time.
+
 ## Development
 
 The project requires Rust 1.89 or newer (for `std::fs::File::try_lock`, used to detect
