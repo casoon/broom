@@ -388,7 +388,6 @@ fn is_executable(_path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
 
     fn unique_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -401,9 +400,14 @@ mod tests {
         dir
     }
 
+    /// Sets a path's mtime, file or directory alike. Uses the `filetime` crate instead of
+    /// `File::open(path).set_modified()`: on Windows, a read-only handle lacks the
+    /// FILE_WRITE_ATTRIBUTES access needed to change mtime, and directories can't be
+    /// opened with plain `OpenOptions::write(true)` at all — `filetime` handles both
+    /// cross-platform. Test-only; the shipped binary never needs to set mtimes.
     fn set_mtime(path: &Path, time: SystemTime) {
-        let file = File::open(path).unwrap();
-        file.set_modified(time).unwrap();
+        let ft = filetime::FileTime::from_system_time(time);
+        filetime::set_file_mtime(path, ft).unwrap();
     }
 
     fn days_ago(days: u64) -> SystemTime {

@@ -31,3 +31,6 @@ toml = "0.8"
 runemark = { version = "0.2.0", features = ["progress"] }
 dialoguer = "0.11"
 trash = "5.2.6"
+
+[dev-dependencies]
+filetime = "0.2.29"
