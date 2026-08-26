@@ -80,6 +80,11 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub clean_doc: bool,
 
+    /// Move Level A (coarse) target directories to the OS trash/recycle bin instead of
+    /// deleting them permanently
+    #[arg(long, global = true)]
+    pub trash: bool,
+
     /// Calculate reclaimable disk space without deleting any files
     #[arg(long, global = true)]
     pub dry_run: bool,
@@ -181,6 +186,7 @@ pub fn run(mut cli: Cli, out: &mut dyn Write) -> Result<()> {
     let experimental_fine = cli.experimental_fine || config.experimental_fine.unwrap_or(false);
     let fine_only = cli.fine_only || config.fine_only.unwrap_or(false);
     let coarse_only = cli.coarse_only || config.coarse_only.unwrap_or(false);
+    let trash = cli.trash || config.trash.unwrap_or(false);
     let hidden = cli.hidden || config.hidden.unwrap_or(false);
 
     let mut ignore = cli.ignore;
@@ -206,6 +212,7 @@ pub fn run(mut cli: Cli, out: &mut dyn Write) -> Result<()> {
         tests_only: cli.tests_only,
         clean_incremental: cli.clean_incremental,
         clean_doc: cli.clean_doc,
+        trash,
         hidden,
         skip,
         ignore,

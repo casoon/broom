@@ -135,7 +135,7 @@ fn test_level_a_coarse_cleaning() {
 
     assert!(should_clean_coarse(target, &level_a_opts));
 
-    let freed = clean_coarse(target, false).unwrap();
+    let freed = clean_coarse(target, false, false).unwrap();
     assert!(freed > 0);
     assert!(!target.target_path.exists());
 
@@ -315,6 +315,7 @@ fn test_run_broom_dry_run_json() {
         tests_only: false,
         clean_incremental: false,
         clean_doc: false,
+        trash: false,
         hidden: false,
         skip: Vec::new(),
         ignore: Vec::new(),
@@ -356,6 +357,7 @@ fn test_run_broom_skips_target_with_active_build_lock() {
         tests_only: false,
         clean_incremental: false,
         clean_doc: false,
+        trash: false,
         hidden: false,
         skip: Vec::new(),
         ignore: Vec::new(),

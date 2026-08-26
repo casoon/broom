@@ -50,8 +50,12 @@ the project scan begins.
   outside the workspace are never removed wholesale.
 - A fingerprint parser error skips fine cleanup for that project. It never falls
   back to deleting the complete target.
+- A target directory currently locked by a running `cargo` process is skipped
+  entirely, at both cleanup levels, instead of racing the build.
 - Filesystem deletion errors are reported and produce a failing exit status.
 - Fingerprint pruning requires the explicit `--experimental-fine` opt-in.
+- `--trash` moves Level A targets to the OS trash/recycle bin instead of deleting
+  them permanently.
 
 All removed data is generated Cargo output. Deletion can still cause rebuilds, so
 use `--dry-run` before enabling an automated job.
@@ -66,12 +70,16 @@ use `--dry-run` before enabling an automated job.
 | `--clean-doc` | Targets not selected for Level A | Generated `target/doc` output |
 | `--experimental-fine` | Targets not selected for Level A | Fingerprints and matching hashed artifacts selected by experimental age and duplicate heuristics |
 | `--fine-only` | Disables Level A | Only explicitly requested fine operations |
+| `--trash` | Modifier for Level A, any policy above | Moves the target to the OS trash/recycle bin instead of deleting it permanently |
 
 Examples:
 
 ```bash
 # Conservative whole-target cleanup only
 cargo broom --yes --coarse-only --keep-days 14 --keep-size 50MB ~/GitHub
+
+# Same, but recoverable: goes to the trash instead of a permanent delete
+cargo broom --yes --coarse-only --trash --keep-days 14 --keep-size 50MB ~/GitHub
 
 # Level A for cold projects; incremental caches and docs for the rest
 cargo broom --yes --clean-incremental --clean-doc ~/GitHub

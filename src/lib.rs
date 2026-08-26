@@ -38,6 +38,7 @@ pub struct BroomRunnerOptions {
     pub tests_only: bool,
     pub clean_incremental: bool,
     pub clean_doc: bool,
+    pub trash: bool,
     pub hidden: bool,
     pub skip: Vec<String>,
     pub ignore: Vec<String>,
@@ -172,10 +173,15 @@ pub fn run_broom(opts: BroomRunnerOptions, out: &mut dyn Write) -> Result<()> {
         progress.advance(idx as u64 + 1, &format!("Cleaning {}", target.project_name));
 
         match cand.proposed_level {
-            CleaningLevel::Coarse => match clean_coarse(&target, opts.dry_run) {
+            CleaningLevel::Coarse => match clean_coarse(&target, opts.dry_run, opts.trash) {
                 Ok(freed) => {
                     coarse_count += 1;
                     total_reclaimed += freed;
+                    let details = if opts.trash {
+                        format!("Coarse clean, moved to trash ({})", format_bytes(freed))
+                    } else {
+                        format!("Coarse clean ({})", format_bytes(freed))
+                    };
                     results.push(ProjectActionResult {
                         project_name: target.project_name.clone(),
                         project_path: target.project_path.clone(),
@@ -183,7 +189,7 @@ pub fn run_broom(opts: BroomRunnerOptions, out: &mut dyn Write) -> Result<()> {
                         level: CleaningLevel::Coarse,
                         original_size_bytes: target.size_bytes,
                         reclaimed_bytes: freed,
-                        details: format!("Coarse clean ({})", format_bytes(freed)),
+                        details,
                         fingerprint_summary: None,
                         error: None,
                     });

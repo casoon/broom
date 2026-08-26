@@ -30,3 +30,4 @@ serde_json = "1.0"
 toml = "0.8"
 runemark = { version = "0.2.0", features = ["progress"] }
 dialoguer = "0.11"
+trash = "5.2.6"

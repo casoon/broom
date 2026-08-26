@@ -40,8 +40,9 @@ pub fn should_clean_coarse(target: &ProjectTarget, options: &LevelAOptions) -> b
     is_older_than_limit && exceeds_size_limit
 }
 
-/// Performs Coarse Clean (Level A) by deleting the whole target directory.
-pub fn clean_coarse(target: &ProjectTarget, dry_run: bool) -> Result<u64> {
+/// Performs Coarse Clean (Level A) by removing the whole target directory: permanently
+/// if `use_trash` is false, or by moving it to the OS trash/recycle bin if true.
+pub fn clean_coarse(target: &ProjectTarget, dry_run: bool, use_trash: bool) -> Result<u64> {
     if !is_safe_local_target(target) {
         anyhow::bail!(
             "refusing coarse clean for shared, overridden, or non-standard target directory: {}",
@@ -56,12 +57,21 @@ pub fn clean_coarse(target: &ProjectTarget, dry_run: bool) -> Result<u64> {
     let bytes_freed = crate::discover::compute_directory_stats(&target.target_path).0;
 
     if !dry_run {
-        remove_dir_all_safe(&target.target_path).with_context(|| {
-            format!(
-                "Failed to remove target dir: {}",
-                target.target_path.display()
-            )
-        })?;
+        if use_trash {
+            trash::delete(&target.target_path).with_context(|| {
+                format!(
+                    "Failed to move target dir to trash: {}",
+                    target.target_path.display()
+                )
+            })?;
+        } else {
+            remove_dir_all_safe(&target.target_path).with_context(|| {
+                format!(
+                    "Failed to remove target dir: {}",
+                    target.target_path.display()
+                )
+            })?;
+        }
     }
 
     Ok(bytes_freed)
@@ -165,6 +175,34 @@ mod tests {
         };
 
         assert!(!should_clean_coarse(&target, &options));
-        assert!(clean_coarse(&target, true).is_err());
+        assert!(clean_coarse(&target, true, false).is_err());
+    }
+
+    #[test]
+    fn clean_coarse_trash_moves_target_out_of_place_without_hard_delete() {
+        let dir = std::env::temp_dir().join(format!("broom_level_a_trash_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let target_path = dir.join("target");
+        std::fs::create_dir_all(&target_path).unwrap();
+        std::fs::write(target_path.join("marker.txt"), b"artifact").unwrap();
+
+        let target = ProjectTarget {
+            project_path: dir.clone(),
+            project_name: "dummy".to_string(),
+            target_path: target_path.clone(),
+            size_bytes: 8,
+            last_modified: SystemTime::now() - Duration::from_secs(30 * 86400),
+            has_target_override: false,
+            owner_count: 1,
+        };
+
+        let freed = clean_coarse(&target, false, true).unwrap();
+        assert!(freed > 0);
+        assert!(
+            !target_path.exists(),
+            "trashed target dir must be gone from its original location"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
