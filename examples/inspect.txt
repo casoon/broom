@@ -1,0 +1,8 @@
+[1;96mcargo-broom Inspect — ~/code[0m
+[2mFound 5 Rust target directories occupying 8.86 MiB[0m
+
+ • blog-engine                 1.86 MiB  ~/code/blog-engine/target
+ • invoice-cli                 2.83 MiB  ~/code/invoice-cli/target
+ • plugin-a (+1 more, shared target)   2.06 MiB  ~/code/plugins/shared-target [Target Override]
+ • toolkit-core                1.07 MiB  ~/code/toolkit/target
+ • weather-api                 1.03 MiB  ~/code/weather-api/target

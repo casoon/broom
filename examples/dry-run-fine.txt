@@ -1,0 +1,18 @@
+[1;96mcargo-broom Summary (Dry Run)[0m
+[36mℹ[0m cargo-broom
+
+  [2mReclaimable: [0m[36m5.13 MiB[0m
+
+● [1;96mLevel A — Full Target Clean (Coarse)[0m [2m(2)[0m
+  - [36mblog-engine (1.86 MiB)[0m at [1;92m~/code/blog-engine/target[0m
+  - [36mweather-api (1.03 MiB)[0m at [1;92m~/code/weather-api/target[0m
+
+● [1;96mLevel B — Selective / Experimental Fine Clean[0m [2m(3)[0m
+  - [36minvoice-cli (pruned 0 stale fingerprints, 2 files) — 1.90 MiB[0m at [1;92m~/code/invoice-cli/target[0m
+  - [36mplugin-a (+1 more, shared target) (pruned 0 stale fingerprints, 1 files) — 211.43 KiB[0m at [1;92m~/code/plugins/shared-target[0m
+  - [36mtoolkit-core (pruned 0 stale fingerprints, 1 files) — 131.03 KiB[0m at [1;92m~/code/toolkit/target[0m
+
+[1;96mNext steps:[0m
+  • Run `cargo broom -y` to reclaim 5.13 MiB
+    [36m$ cargo broom -y[0m
+

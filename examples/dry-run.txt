@@ -1,0 +1,13 @@
+[1;96mcargo-broom Summary (Dry Run)[0m
+[36mℹ[0m cargo-broom
+
+  [2mReclaimable: [0m[36m2.89 MiB[0m
+
+● [1;96mLevel A — Full Target Clean (Coarse)[0m [2m(2)[0m
+  - [36mblog-engine (1.86 MiB)[0m at [1;92m~/code/blog-engine/target[0m
+  - [36mweather-api (1.03 MiB)[0m at [1;92m~/code/weather-api/target[0m
+
+[1;96mNext steps:[0m
+  • Run `cargo broom -y` to reclaim 2.89 MiB
+    [36m$ cargo broom -y[0m
+

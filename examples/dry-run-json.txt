@@ -1,0 +1,35 @@
+{
+  "root_path": "~/code",
+  "dry_run": true,
+  "total_projects_scanned": 5,
+  "coarse_cleaned_count": 2,
+  "fine_cleaned_count": 0,
+  "skipped_count": 3,
+  "error_count": 0,
+  "total_reclaimed_bytes": 3032952,
+  "history_trend": null,
+  "results": [
+    {
+      "project_name": "blog-engine",
+      "project_path": "~/code/blog-engine",
+      "target_path": "~/code/blog-engine/target",
+      "level": "Coarse",
+      "original_size_bytes": 1950676,
+      "reclaimed_bytes": 1950676,
+      "details": "Coarse clean (1.86 MiB)",
+      "fingerprint_summary": null,
+      "error": null
+    },
+    {
+      "project_name": "weather-api",
+      "project_path": "~/code/weather-api",
+      "target_path": "~/code/weather-api/target",
+      "level": "Coarse",
+      "original_size_bytes": 1082276,
+      "reclaimed_bytes": 1082276,
+      "details": "Coarse clean (1.03 MiB)",
+      "fingerprint_summary": null,
+      "error": null
+    }
+  ]
+}

@@ -11,6 +11,8 @@ readme = "README.md"
 repository = "https://github.com/casoon/broom"
 keywords = ["cargo-plugin", "clean", "sweep", "target", "disk-space"]
 categories = ["development-tools::cargo-plugins", "command-line-utilities"]
+# Website sources (GitHub Pages), not part of the crate.
+exclude = ["/site", "/docs", "/examples", "/.github/workflows/pages.yml"]
 
 [lib]
 name = "broom"
