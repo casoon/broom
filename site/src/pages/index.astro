@@ -1,0 +1,99 @@
+---
+import {
+  Badge,
+  Badges,
+  BuildOutput,
+  CodeBlock,
+  Facts,
+  Features,
+  Hero,
+  Install,
+  Quickstart,
+  Terminal,
+} from '@casoon/pages-theme/components';
+import Base from '@casoon/pages-theme/layouts/Base.astro';
+import dryRun from '../../../examples/dry-run.txt?raw';
+import inspect from '../../../examples/inspect.txt?raw';
+
+const quickstart = `# What is there? Read-only.
+cargo broom inspect ~/code
+
+# What would go? Deletes nothing.
+cargo broom --dry-run --keep-days 30 --keep-size 50MB ~/code
+
+# Clean up, recoverably
+cargo broom --yes --trash --keep-days 30 --keep-size 50MB ~/code`;
+---
+
+<Base>
+  <Hero
+    title="Sweep cold Cargo targets, not your work."
+    lead="cargo-broom finds the build output of every Rust project below a directory and removes what has gone cold. It refuses to delete without an explicit flag, and it never removes a shared, overridden or running target as a whole."
+  >
+    <Install
+      commands={[
+        { label: 'cargo', command: 'cargo install cargo-broom' },
+        { label: 'git', command: 'cargo install --git https://github.com/casoon/broom' },
+      ]}
+    />
+    <Badges>
+      <Badge>MIT</Badge>
+      <Badge>v0.1.0</Badge>
+      <Badge>Cargo subcommand</Badge>
+      <Badge>Rust 1.89+</Badge>
+    </Badges>
+    <Terminal slot="output" title="cargo broom --dry-run ~/code" dots ansi={dryRun} />
+  </Hero>
+
+  <Facts
+    items={[
+      { value: '3', label: 'flags that allow a cleanup: --dry-run, --interactive, --yes' },
+      { value: '14 days', label: 'default age before a whole target qualifies' },
+      { value: '6', label: 'subcommands, four of them read-only' },
+      { value: '3', label: 'CI platforms: Linux, macOS, Windows' },
+    ]}
+  />
+
+  <Features
+    items={[
+      {
+        title: 'Nothing happens by default',
+        body: 'A cleanup needs --dry-run, --interactive or --yes on the command line. The configuration file cannot supply the confirmation.',
+      },
+      {
+        title: 'Only plain local targets go whole',
+        body: 'A full removal is limited to <workspace>/target. Shared, overridden, symlinked and locked targets are skipped.',
+      },
+      {
+        title: 'One command for every checkout',
+        body: 'Recursive discovery resolves each workspace and its real target directory with cargo metadata, then judges every project by age and size.',
+      },
+      {
+        title: 'Selective cleanup for active projects',
+        body: 'Remove incremental caches and generated docs from targets you still use. Fingerprint pruning is opt-in and marked experimental.',
+      },
+      {
+        title: 'Recoverable and scriptable',
+        body: '--trash sends removed targets to the OS trash, --format json feeds scripts, --history tracks whether targets grow back.',
+      },
+    ]}
+  />
+
+  <BuildOutput
+    caption="Captured from cargo-broom 0.1.0 over five sample projects that examples/generate.sh builds in a temporary directory. Only the temporary path is shortened to ~/code."
+    file="examples/inspect.txt"
+  >
+    <Terminal title="cargo broom inspect ~/code" ansi={inspect} />
+  </BuildOutput>
+
+  <Quickstart
+    lead="Inspect, preview, then clean. The first two steps change nothing on disk."
+    steps={[
+      'Install the crate; Cargo runs it as <code>cargo broom</code>.',
+      'Run <code>inspect</code> and a <code>--dry-run</code> over the directory that holds your projects.',
+      'When the selection is right, clean with <code>--interactive</code> or <code>--yes</code>.',
+    ]}
+  >
+    <CodeBlock code={quickstart} lang="shell" title="terminal" label="Shell" />
+  </Quickstart>
+</Base>
