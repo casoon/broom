@@ -50,6 +50,8 @@ pub struct BroomRunnerOptions {
     pub ignore: Vec<String>,
     pub output_format: OutputFormat,
     pub color_mode: ColorMode,
+    /// Show every finding in the report instead of the first few per group
+    pub details: bool,
 }
 
 /// Records this run's resulting target sizes to the `--history` log and, if any of
@@ -352,7 +354,13 @@ pub fn run_broom(opts: BroomRunnerOptions, out: &mut dyn Write) -> Result<()> {
         results,
     };
 
-    render_report(&report_summary, opts.output_format, opts.color_mode, out)?;
+    render_report(
+        &report_summary,
+        opts.output_format,
+        opts.color_mode,
+        opts.details,
+        out,
+    )?;
     if error_count > 0 {
         anyhow::bail!("{} project(s) could not be cleaned", error_count);
     }

@@ -54,6 +54,15 @@ const examples_ = [
       'Every discovered target with its size. The workspace appears once; the two plugins share one overridden target.',
   },
   {
+    slug: 'budget',
+    title: 'Budget',
+    file: 'budget.txt',
+    command: 'cargo broom budget ~/code --limit 5MB',
+    tags: ['read-only', 'multi-project'],
+    description:
+      'Total target usage against one budget for the whole tree. Over budget, it names the largest targets; --details lists all of them.',
+  },
+  {
     slug: 'dry-run-json',
     title: 'JSON report',
     file: 'dry-run-json.txt',

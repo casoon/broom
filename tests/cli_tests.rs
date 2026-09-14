@@ -236,6 +236,7 @@ fn test_command_inspect_and_doctor() {
             ColorMode::Never,
             true,
             false,
+            false,
             &mut out_inspect,
         )
         .unwrap();
@@ -252,6 +253,7 @@ fn test_command_inspect_and_doctor() {
             OutputFormat::Tty,
             ColorMode::Never,
             true,
+            false,
             false,
             &mut out_doctor,
         )
@@ -276,6 +278,7 @@ fn test_command_registry_and_toolchains() {
             ColorMode::Never,
             true,
             false,
+            false,
             &mut out_reg,
         )
         .unwrap();
@@ -291,6 +294,7 @@ fn test_command_registry_and_toolchains() {
             OutputFormat::Tty,
             ColorMode::Never,
             true,
+            false,
             false,
             &mut out_tc,
         )
@@ -328,6 +332,7 @@ fn test_run_broom_dry_run_json() {
         ignore: Vec::new(),
         output_format: OutputFormat::Json,
         color_mode: ColorMode::Never,
+        details: false,
     };
 
     run_broom(opts, &mut out).unwrap();
@@ -373,6 +378,7 @@ fn test_run_broom_skips_target_with_active_build_lock() {
         ignore: Vec::new(),
         output_format: OutputFormat::Json,
         color_mode: ColorMode::Never,
+        details: false,
     };
 
     run_broom(opts, &mut out).unwrap();
@@ -580,4 +586,133 @@ fn cli_rejects_invalid_config_and_conflicting_modes() {
     assert!(!conflicting.status.success());
 
     let _ = fs::remove_dir_all(ws);
+}
+
+/// A minimal crate `cargo metadata` accepts, optionally with a `.cargo/config.toml`.
+fn create_crate(dir: &std::path::Path, name: &str, cargo_config: Option<&str>) {
+    fs::create_dir_all(dir.join("src")).unwrap();
+    fs::write(
+        dir.join("Cargo.toml"),
+        format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"),
+    )
+    .unwrap();
+    fs::write(dir.join("src/lib.rs"), "").unwrap();
+    if let Some(config) = cargo_config {
+        fs::create_dir_all(dir.join(".cargo")).unwrap();
+        fs::write(dir.join(".cargo/config.toml"), config).unwrap();
+    }
+}
+
+fn create_temp_parent(name: &str) -> PathBuf {
+    let parent = std::env::temp_dir().join(format!("broom_test_{}_{}", name, std::process::id()));
+    let _ = fs::remove_dir_all(&parent);
+    fs::create_dir_all(&parent).unwrap();
+    parent
+}
+
+/// Regression test: a relative `target-dir` in `.cargo/config.toml` is resolved by Cargo
+/// against each project's own directory (`proj-a/../shared-target`,
+/// `proj-b/../shared-target`). Both must still be recognised as one shared target,
+/// listed once and counted once.
+#[test]
+fn test_discover_targets_relative_config_target_dir_is_shared() {
+    let parent = create_temp_parent("relative_config_target");
+    let shared_target = parent.join("shared-target");
+    fs::create_dir_all(&shared_target).unwrap();
+    fs::write(shared_target.join("artifact"), vec![0u8; 1000]).unwrap();
+
+    for name in ["proj-a", "proj-b"] {
+        create_crate(
+            &parent.join(name),
+            name,
+            Some("[build]\ntarget-dir = \"../shared-target\"\n"),
+        );
+    }
+
+    let targets = discover_targets(&parent, &DiscoverOptions::default()).unwrap();
+
+    assert_eq!(targets.len(), 1, "{targets:#?}");
+    assert_eq!(targets[0].owner_count, 2);
+    assert!(targets[0].has_target_override);
+    assert_eq!(
+        targets[0].target_path,
+        shared_target.canonicalize().unwrap()
+    );
+    assert_eq!(targets[0].size_bytes, 1000);
+
+    let _ = fs::remove_dir_all(&parent);
+}
+
+/// Regression test: a relative `CARGO_TARGET_DIR` is resolved by Cargo against the
+/// directory it runs in, so it has the same per-project `..` problem as a relative
+/// config `target-dir`.
+#[test]
+fn cli_inspect_relative_cargo_target_dir_is_shared() {
+    let parent = create_temp_parent("relative_env_target");
+    let shared_target = parent.join("env-target");
+    fs::create_dir_all(&shared_target).unwrap();
+    fs::write(shared_target.join("artifact"), vec![0u8; 1000]).unwrap();
+    for name in ["proj-a", "proj-b"] {
+        create_crate(&parent.join(name), name, None);
+    }
+
+    let output = cargo_broom_command()
+        .env("CARGO_TARGET_DIR", "../env-target")
+        .args(["inspect", "--format", "json"])
+        .arg(&parent)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let targets: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let targets = targets.as_array().unwrap();
+    assert_eq!(targets.len(), 1, "{targets:#?}");
+    assert_eq!(targets[0]["owner_count"], 2);
+    assert_eq!(targets[0]["size_bytes"], 1000);
+
+    let _ = fs::remove_dir_all(&parent);
+}
+
+/// Regression test: runemark cuts a finding group short with "use --details to view
+/// all", so `--details` must exist and show every entry.
+#[test]
+fn cli_details_shows_every_finding() {
+    let parent = create_temp_parent("budget_details");
+    let names = ["alpha", "bravo", "charlie", "delta"];
+    for name in names {
+        let dir = parent.join(name);
+        create_crate(&dir, name, None);
+        fs::create_dir_all(dir.join("target")).unwrap();
+        fs::write(dir.join("target/artifact"), "build output").unwrap();
+    }
+
+    let budget = |extra: &[&str]| {
+        let output = cargo_broom_command()
+            .args(["budget", "--limit", "1B", "--color", "never"])
+            .args(extra)
+            .arg(&parent)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap()
+    };
+
+    let compact = budget(&[]);
+    assert!(compact.contains("1 more finding(s) (use --details to view all)"));
+
+    let detailed = budget(&["--details"]);
+    for name in names {
+        assert!(detailed.contains(name), "{name} missing:\n{detailed}");
+    }
+    assert!(!detailed.contains("more finding(s)"), "{detailed}");
+
+    let _ = fs::remove_dir_all(&parent);
 }

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use runemark::{
-    ColorMode, Console, ErrorBlock, Finding, FindingGroup, Location, Metric, NextStep, Report,
-    Tone, Trend, Verdict,
+    ColorMode, Console, DetailLevel, ErrorBlock, Finding, FindingGroup, Location, Metric, NextStep,
+    Report, Tone, Trend, Verdict,
 };
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -67,11 +67,22 @@ pub fn render_report(
     summary: &BroomReportSummary,
     output_format: OutputFormat,
     color_mode: ColorMode,
+    details: bool,
     out: &mut dyn Write,
 ) -> Result<()> {
     match output_format {
-        OutputFormat::Tty => render_tty_report(summary, color_mode, out),
+        OutputFormat::Tty => render_tty_report(summary, color_mode, details, out),
         OutputFormat::Json => render_json_report(summary, out),
+    }
+}
+
+/// runemark lists the first few findings of each group and points to `--details` for
+/// the rest; `--details` switches to the full list.
+pub fn detail_level(details: bool) -> DetailLevel {
+    if details {
+        DetailLevel::Detailed
+    } else {
+        DetailLevel::Compact
     }
 }
 
@@ -84,6 +95,7 @@ pub enum OutputFormat {
 fn render_tty_report(
     summary: &BroomReportSummary,
     color_mode: ColorMode,
+    details: bool,
     out: &mut dyn Write,
 ) -> Result<()> {
     let console = Console::new(color_mode, true);
@@ -100,7 +112,7 @@ fn render_tty_report(
         Verdict::Passed
     };
 
-    let mut report = Report::new("cargo-broom", verdict);
+    let mut report = Report::new("cargo-broom", verdict).with_detail_level(detail_level(details));
 
     if summary.total_reclaimed_bytes > 0 {
         let metric_label = if summary.dry_run {

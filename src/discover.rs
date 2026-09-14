@@ -101,6 +101,7 @@ pub fn discover_targets(root: &Path, options: &DiscoverOptions) -> Result<Vec<Pr
                 if !target_dir.exists() {
                     continue; // Skip if target directory doesn't exist on disk
                 }
+                let target_dir = normalize_target_dir(&target_dir);
 
                 let project_name = metadata
                     .root_package()
@@ -122,20 +123,20 @@ pub fn discover_targets(root: &Path, options: &DiscoverOptions) -> Result<Vec<Pr
 
                 // A target_directory that differs from the plain <workspace_root>/target
                 // default is overridden, whether via CARGO_TARGET_DIR or .cargo/config.toml.
-                let has_target_override = target_dir != ws_root.join("target");
+                let has_target_override =
+                    target_dir != normalize_target_dir(&ws_root.join("target"));
 
-                *owner_counts.entry(target_dir.clone()).or_insert(0) += 1;
-                resolved_targets
-                    .entry(target_dir.clone())
-                    .or_insert(ProjectTarget {
-                        project_path: ws_root,
-                        project_name,
-                        target_path: target_dir,
-                        size_bytes,
-                        last_modified,
-                        has_target_override,
-                        owner_count: 0, // backfilled below once every manifest has been processed
-                    });
+                let key = shared_target_key(&target_dir);
+                *owner_counts.entry(key.clone()).or_insert(0) += 1;
+                resolved_targets.entry(key).or_insert(ProjectTarget {
+                    project_path: ws_root,
+                    project_name,
+                    target_path: target_dir,
+                    size_bytes,
+                    last_modified,
+                    has_target_override,
+                    owner_count: 0, // backfilled below once every manifest has been processed
+                });
             }
             Err(_) => {
                 // If cargo_metadata fails (e.g. invalid Cargo.toml), fallback to standard target/ subfolder check
@@ -153,26 +154,25 @@ pub fn discover_targets(root: &Path, options: &DiscoverOptions) -> Result<Vec<Pr
                     // to the env-var/config-presence heuristic as a best-effort signal.
                     let has_target_override = check_target_override(&project_dir);
 
-                    *owner_counts.entry(fallback_target.clone()).or_insert(0) += 1;
-                    resolved_targets
-                        .entry(fallback_target.clone())
-                        .or_insert(ProjectTarget {
-                            project_path: project_dir,
-                            project_name,
-                            target_path: fallback_target,
-                            size_bytes,
-                            last_modified,
-                            has_target_override,
-                            owner_count: 0, // backfilled below once every manifest has been processed
-                        });
+                    let key = shared_target_key(&fallback_target);
+                    *owner_counts.entry(key.clone()).or_insert(0) += 1;
+                    resolved_targets.entry(key).or_insert(ProjectTarget {
+                        project_path: project_dir,
+                        project_name,
+                        target_path: fallback_target,
+                        size_bytes,
+                        last_modified,
+                        has_target_override,
+                        owner_count: 0, // backfilled below once every manifest has been processed
+                    });
                 }
             }
         }
     }
 
-    let mut targets: Vec<ProjectTarget> = resolved_targets.into_values().collect();
-    for target in &mut targets {
-        target.owner_count = owner_counts.get(&target.target_path).copied().unwrap_or(1);
+    let mut targets = Vec::with_capacity(resolved_targets.len());
+    for (key, mut target) in resolved_targets {
+        target.owner_count = owner_counts[&key];
         if target.owner_count > 1 {
             target.project_name = format!(
                 "{} (+{} more, shared target)",
@@ -180,9 +180,29 @@ pub fn discover_targets(root: &Path, options: &DiscoverOptions) -> Result<Vec<Pr
                 target.owner_count - 1
             );
         }
+        targets.push(target);
     }
 
     Ok(targets)
+}
+
+/// Cargo resolves a relative target directory (`build.target-dir` relative to the parent
+/// of the `.cargo` directory holding the config file, `CARGO_TARGET_DIR` relative to its
+/// working directory) by joining it without normalising, so two projects sharing
+/// `../shared-target` report `a/../shared-target` and `b/../shared-target`. This resolves
+/// `..` and symlinked ancestors but keeps the last component as is, so a symlinked
+/// `target` is still recognised as one by `level_a`.
+fn normalize_target_dir(path: &Path) -> PathBuf {
+    match (path.parent().map(Path::canonicalize), path.file_name()) {
+        (Some(Ok(parent)), Some(name)) => parent.join(name),
+        _ => path.to_path_buf(),
+    }
+}
+
+/// Identity of a target directory on disk: two paths that reach the same directory, even
+/// through symlinks, are one (shared) target.
+fn shared_target_key(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn read_crate_name_from_manifest(manifest_path: &Path) -> Option<String> {

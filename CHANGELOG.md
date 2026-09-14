@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- `--details` lists every entry of a report group. Reports show the first three
+  entries per group and pointed to `--details` for the rest, but the option did not
+  exist.
+
+### Fixed
+
+- Projects sharing a target directory through a relative `target-dir` in
+  `.cargo/config.toml` or a relative `CARGO_TARGET_DIR` were listed once per project,
+  and `inspect` and `budget` counted the shared directory's size once per project.
+  Target directories are now compared by their canonical path.
+
 ## [0.1.0] - 2026-08-26
 
 Initial release.
@@ -32,4 +47,5 @@ Initial release.
   surfaced as a size-over-time comparison in reports.
 - `broom.toml` / `~/.config/cargo-broom/config.toml` configuration file support.
 
+[Unreleased]: https://github.com/casoon/broom/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/casoon/broom/releases/tag/v0.1.0
