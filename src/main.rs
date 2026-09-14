@@ -120,6 +120,10 @@ pub struct Cli {
     #[arg(long, value_enum, default_value_t = CliColorChoice::Auto, global = true)]
     pub color: CliColorChoice,
 
+    /// Show every finding in a report instead of the first few per group
+    #[arg(long, global = true)]
+    pub details: bool,
+
     /// Explicit path to configuration file (broom.toml)
     #[arg(long, global = true)]
     pub config: Option<PathBuf>,
@@ -177,7 +181,14 @@ pub fn run(mut cli: Cli, out: &mut dyn Write) -> Result<()> {
     let project_path = match cli.command.take() {
         Some(Command::Project(args)) => Some(args.path),
         Some(subcommand) => {
-            return subcommand.run(output_format, color_mode, cli.dry_run, cli.yes, out);
+            return subcommand.run(
+                output_format,
+                color_mode,
+                cli.dry_run,
+                cli.yes,
+                cli.details,
+                out,
+            );
         }
         None => None,
     };
@@ -237,6 +248,7 @@ pub fn run(mut cli: Cli, out: &mut dyn Write) -> Result<()> {
         ignore,
         output_format,
         color_mode,
+        details: cli.details,
     };
 
     run_broom(opts, out)

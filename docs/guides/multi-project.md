@@ -28,7 +28,9 @@ Without a path it scans the current directory. `root_path` in the
 4. Target directories that do not exist on disk are dropped. What remains is measured: total
    size and newest modification time.
 5. If several projects resolve to the same target directory, it is listed once with the number
-   of additional owners, for example `plugin-a (+1 more, shared target)`.
+   of additional owners, for example `plugin-a (+1 more, shared target)`. Paths are compared
+   after resolving `..` and symlinks, so two sibling projects with
+   `target-dir = "../shared-target"` share one target.
 
 If `cargo metadata` fails for a manifest, for example because it is invalid, cargo-broom falls
 back to `<project>/target` and treats the project as overridden when `CARGO_TARGET_DIR` is set
@@ -56,8 +58,9 @@ This output, like the others in these docs, comes from sample projects created b
 Three more read-only commands work on the same set of projects:
 
 - `cargo broom budget ~/code --limit 50GB` adds up all targets and, when the total is over the
-  limit, names the largest contributors. Unlike `--keep-size`, which is a per-project threshold,
-  this is one budget for the whole tree.
+  limit, names up to five of the largest contributors (three by default, all of them with
+  `--details`). Unlike `--keep-size`, which is a per-project threshold, this is one budget for
+  the whole tree.
 - `cargo broom doctor ~/code` reports local target overrides that conflict with a global
   `CARGO_TARGET_DIR`, target directories over 10 GiB, and builds in progress.
 - `cargo broom toolchains ~/code` lists installed rustup toolchains that no `rust-toolchain`

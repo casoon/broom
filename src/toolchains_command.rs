@@ -8,12 +8,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::report::OutputFormat;
+use crate::report::{OutputFormat, detail_level};
 
 pub fn run_toolchains(
     root_path: &Path,
     output_format: OutputFormat,
     color_mode: ColorMode,
+    details: bool,
     out: &mut dyn Write,
 ) -> Result<()> {
     let rustup_home = std::env::var_os("RUSTUP_HOME")
@@ -83,7 +84,8 @@ pub fn run_toolchains(
         Verdict::Info
     };
 
-    let mut report = Report::new("cargo-broom toolchains", verdict);
+    let mut report =
+        Report::new("cargo-broom toolchains", verdict).with_detail_level(detail_level(details));
 
     if !unreferenced.is_empty() {
         let mut group = FindingGroup::new("Unreferenced rustup Toolchains");

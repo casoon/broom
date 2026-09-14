@@ -8,7 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::report::{OutputFormat, format_bytes};
+use crate::report::{OutputFormat, detail_level, format_bytes};
 
 pub fn run_registry(
     root_path: &Path,
@@ -16,6 +16,7 @@ pub fn run_registry(
     auto_confirm: bool,
     output_format: OutputFormat,
     color_mode: ColorMode,
+    details: bool,
     out: &mut dyn Write,
 ) -> Result<()> {
     if !dry_run && !auto_confirm {
@@ -116,7 +117,8 @@ pub fn run_registry(
         Verdict::Info
     };
 
-    let mut report = Report::new("cargo-broom registry", verdict);
+    let mut report =
+        Report::new("cargo-broom registry", verdict).with_detail_level(detail_level(details));
     if reported_bytes > 0 {
         let metric_label = if dry_run { "Reclaimable" } else { "Reclaimed" };
         report = report.add_metric(Metric::new(metric_label, format_bytes(reported_bytes)));

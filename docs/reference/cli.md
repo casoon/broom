@@ -64,6 +64,7 @@ Details and examples: [Cleanup modes](../../guides/cleanup-modes/).
 | --- | --- |
 | `--format <tty\|json>` | Output format. Default `tty`. |
 | `--color <auto\|always\|never>` | Colour mode. Default `auto`. |
+| `--details` | List every entry of a report group. Without it, a group shows the first three and says how many more there are. |
 | `--history` | Record resulting target sizes in a 14-day log and report the trend |
 | `--config <FILE>` | Use this configuration file instead of looking for one |
 

@@ -1,5 +1,5 @@
 use crate::discover::{DiscoverOptions, discover_targets};
-use crate::report::{OutputFormat, format_bytes};
+use crate::report::{OutputFormat, detail_level, format_bytes};
 use anyhow::Result;
 use runemark::{Console, Finding, FindingGroup, Location, Metric, NextStep, Report, Tone, Verdict};
 use std::io::Write;
@@ -13,6 +13,7 @@ pub fn run_budget(
     limit_bytes: Option<u64>,
     output_format: OutputFormat,
     color_mode: runemark::ColorMode,
+    details: bool,
     out: &mut dyn Write,
 ) -> Result<()> {
     let options = DiscoverOptions::default();
@@ -47,7 +48,8 @@ pub fn run_budget(
         Verdict::Passed
     };
 
-    let mut report = Report::new("cargo-broom budget", verdict);
+    let mut report =
+        Report::new("cargo-broom budget", verdict).with_detail_level(detail_level(details));
     report = report.add_metric(Metric::new("Total usage", format_bytes(total_bytes)));
     if let Some(limit) = limit_bytes {
         report = report.add_metric(Metric::new("Budget", format_bytes(limit)));

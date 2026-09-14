@@ -75,6 +75,7 @@ impl Command {
         color_mode: ColorMode,
         dry_run: bool,
         auto_confirm: bool,
+        details: bool,
         out: &mut dyn Write,
     ) -> Result<()> {
         match self {
@@ -90,20 +91,28 @@ impl Command {
             }
             Command::Doctor(args) => {
                 let root = args.path.unwrap_or_else(|| PathBuf::from("."));
-                run_doctor(&root, output_format, color_mode, out)
+                run_doctor(&root, output_format, color_mode, details, out)
             }
             Command::Registry(args) => {
                 let root = args.path.unwrap_or_else(|| PathBuf::from("."));
-                run_registry(&root, dry_run, auto_confirm, output_format, color_mode, out)
+                run_registry(
+                    &root,
+                    dry_run,
+                    auto_confirm,
+                    output_format,
+                    color_mode,
+                    details,
+                    out,
+                )
             }
             Command::Toolchains(args) => {
                 let root = args.path.unwrap_or_else(|| PathBuf::from("."));
-                run_toolchains(&root, output_format, color_mode, out)
+                run_toolchains(&root, output_format, color_mode, details, out)
             }
             Command::Budget(args) => {
                 let root = args.path.unwrap_or_else(|| PathBuf::from("."));
                 let limit_bytes = parse_size_string(args.limit.as_deref())?;
-                run_budget(&root, limit_bytes, output_format, color_mode, out)
+                run_budget(&root, limit_bytes, output_format, color_mode, details, out)
             }
         }
     }

@@ -56,12 +56,12 @@ new_crate "$root/toolkit/core" toolkit-core lib
 new_crate "$root/toolkit/cli" toolkit-cli
 (cd "$root/toolkit" && cargo build --quiet)
 
-# Two plugins that share one target directory via .cargo/config.toml. Old, but shared
-# and overridden, so it is never removed wholesale.
+# Two plugins that share one target directory via a relative target-dir in
+# .cargo/config.toml. Old, but shared and overridden, so it is never removed wholesale.
 for p in plugin-a plugin-b; do
   new_crate "$root/plugins/$p" "$p"
   mkdir -p "$root/plugins/$p/.cargo"
-  printf '[build]\ntarget-dir = "%s"\n' "$root/plugins/shared-target" >"$root/plugins/$p/.cargo/config.toml"
+  printf '[build]\ntarget-dir = "../shared-target"\n' >"$root/plugins/$p/.cargo/config.toml"
   (cd "$root/plugins/$p" && cargo build --quiet)
 done
 age "$root/plugins/shared-target"
@@ -85,6 +85,8 @@ capture dry-run-fine.txt 'cargo broom --dry-run --clean-incremental --clean-doc 
 capture project.txt 'cargo broom project ~/code/weather-api --dry-run' \
   --color always project "$root/weather-api" --dry-run
 capture inspect.txt 'cargo broom inspect ~/code' --color always inspect "$root"
+capture budget.txt 'cargo broom budget ~/code --limit 5MB' \
+  --color always budget "$root" --limit 5MB
 capture dry-run-json.txt 'cargo broom --dry-run --format json ~/code' \
   --dry-run --format json "$root"
 capture refused.txt 'cargo broom ~/code' --color always "$root"

@@ -1,0 +1,14 @@
+[1;96mcargo-broom Budget — ~/code[0m
+[1;93m⚠[0m cargo-broom budget
+
+  [2mTotal usage: [0m[36m8.86 MiB[0m   [2mBudget: [0m[36m5.00 MiB[0m
+
+● [1;96mLargest Contributors[0m [2m(5)[0m
+  - [36minvoice-cli (2.83 MiB)[0m at [1;92m~/code/invoice-cli/target[0m
+  - [36mplugin-a (+1 more, shared target) (2.06 MiB)[0m at [1;92m~/code/plugins/shared-target[0m
+  - [36mblog-engine (1.86 MiB)[0m at [1;92m~/code/blog-engine/target[0m
+  [2m... 2 more finding(s) (use --details to view all)[0m
+
+[1;96mNext steps:[0m
+  • Total usage exceeds the budget by 3.86 MiB; review the largest projects above
+

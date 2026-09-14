@@ -1,5 +1,5 @@
 use crate::discover::{DiscoverOptions, discover_targets, is_build_running};
-use crate::report::{OutputFormat, format_bytes};
+use crate::report::{OutputFormat, detail_level, format_bytes};
 use anyhow::Result;
 use runemark::{ColorMode, Console, Finding, FindingGroup, Location, Report, Tone, Verdict};
 use std::io::Write;
@@ -9,6 +9,7 @@ pub fn run_doctor(
     root_path: &Path,
     output_format: OutputFormat,
     color_mode: ColorMode,
+    details: bool,
     out: &mut dyn Write,
 ) -> Result<()> {
     let options = DiscoverOptions::default();
@@ -79,7 +80,8 @@ pub fn run_doctor(
     } else {
         Verdict::Passed
     };
-    let mut report = Report::new("cargo-broom doctor", verdict);
+    let mut report =
+        Report::new("cargo-broom doctor", verdict).with_detail_level(detail_level(details));
 
     if findings_count > 0 {
         report = report.add_group(group);
