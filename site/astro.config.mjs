@@ -10,6 +10,8 @@ export default defineConfig({
     casoonPages({
       name: 'cargo-broom',
       description: 'Conservative Cargo build-artifact cleaner for one or many Rust projects.',
+      tagline: 'Clean up Cargo build artifacts',
+      website: 'https://broom.casoon.de',
       repo: 'casoon/broom',
       version: '0.1.0',
       license: 'MIT',
