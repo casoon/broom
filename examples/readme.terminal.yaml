@@ -18,7 +18,7 @@ steps:
 
         \ • web-client                 36.24 MiB  /private/tmp/projects/web-client/target\n"
     delay: 9
-  - wait: 1200
+  - wait: 2500
   - run: cargo broom --dry-run --keep-days 30 --keep-size 10MB .
   - output:
       raw: "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 0/2\r\e[2K\e[36m⠁\e[0m [00:00:00] [\e[36m\e[34m----------------------------------------\e[0m\e[0m] 0/2 (0s) Scanning & cleaning target directories                                                                                                 \e[1A\r\e[2K\e[1B\r\e[2K\e[1A\e[36m⠁\e[0m [00:00:00] [\e[36m####################>\e[34m-------------------\e[0m\e[0m] 1/2 (0s) Scanning & cleaning target directories                                                                                                 \e[1A\r\e[2K\e[1B\r\e[2K\e[1A\e[36m⠁\e[0m [00:00:00] [\e[36m####################>\e[34m-------------------\e[0m\e[0m] 1/2 (0s) Cleaning api-server                \e[1;96mcargo-broom Summary (Dry Run)\e[0m
@@ -43,4 +43,4 @@ steps:
 
         \r\e[2K"
     delay: 4
-  - wait: 3000
+  - wait: 9000
