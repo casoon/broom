@@ -1,0 +1,46 @@
+version: 1
+
+terminal:
+  title: cargo broom
+  cols: 100
+  rows: 19
+  theme: catppuccin-mocha
+
+steps:
+  - run: cargo broom inspect .
+  - output:
+      raw: "\e[1;96mcargo-broom Inspect — .\e[0m
+
+        \e[2mFound 2 Rust target directories occupying 64.85 MiB\e[0m
+
+
+        \ • api-server                 28.61 MiB  /private/tmp/projects/api-server/target
+
+        \ • web-client                 36.24 MiB  /private/tmp/projects/web-client/target\n"
+    delay: 9
+  - wait: 1200
+  - run: cargo broom --dry-run --keep-days 30 --keep-size 10MB .
+  - output:
+      raw: "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 0/2\r\e[2K\e[36m⠁\e[0m [00:00:00] [\e[36m\e[34m----------------------------------------\e[0m\e[0m] 0/2 (0s) Scanning & cleaning target directories                                                                                                 \e[1A\r\e[2K\e[1B\r\e[2K\e[1A\e[36m⠁\e[0m [00:00:00] [\e[36m####################>\e[34m-------------------\e[0m\e[0m] 1/2 (0s) Scanning & cleaning target directories                                                                                                 \e[1A\r\e[2K\e[1B\r\e[2K\e[1A\e[36m⠁\e[0m [00:00:00] [\e[36m####################>\e[34m-------------------\e[0m\e[0m] 1/2 (0s) Cleaning api-server                \e[1;96mcargo-broom Summary (Dry Run)\e[0m
+
+        \e[36mℹ\e[0m cargo-broom
+
+
+        \  \e[2mReclaimable: \e[0m\e[36m28.61 MiB\e[0m
+
+
+        ● \e[1;96mLevel A — Full Target Clean (Coarse)\e[0m \e[2m(1)\e[0m
+
+        \  - \e[36mapi-server (28.61 MiB)\e[0m at \e[1;92m/private/tmp/projects/api-server/target\e[0m
+
+
+        \e[1;96mNext steps:\e[0m
+
+        \  • Run `cargo broom -y` to reclaim 28.61 MiB
+
+        \    \e[36m$ cargo broom -y\e[0m
+
+
+        \r\e[2K"
+    delay: 4
+  - wait: 3000
