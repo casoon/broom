@@ -3,6 +3,7 @@ import {
   Badge,
   Badges,
   BuildOutput,
+  CallToAction,
   CodeBlock,
   Facts,
   Features,
@@ -12,6 +13,7 @@ import {
   Terminal,
 } from '@casoon/pages-theme/components';
 import Base from '@casoon/pages-theme/layouts/Base.astro';
+import { url } from '@casoon/pages-theme/url';
 import dryRun from '../../../examples/dry-run.txt?raw';
 import inspect from '../../../examples/inspect.txt?raw';
 
@@ -96,4 +98,10 @@ cargo broom --yes --trash --keep-days 30 --keep-size 50MB ~/code`;
   >
     <CodeBlock code={quickstart} lang="shell" title="terminal" label="Shell" />
   </Quickstart>
+
+  <CallToAction
+    title="Inspect first, clean second."
+    href={url('docs/getting-started/quickstart/')}
+    label="Read the quickstart"
+  />
 </Base>
