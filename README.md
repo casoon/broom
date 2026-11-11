@@ -10,6 +10,10 @@ The current `0.1.0` codebase is a safety-first alpha. Conservative target cleanu
 inspection, JSON reporting, and selective cache cleanup are available. Cargo
 fingerprint pruning remains experimental and is disabled by default.
 
+<p align="center">
+  <img src=".github/readme/demo.svg" alt="cargo broom inspect lists two target directories with their sizes; cargo broom --dry-run then reports which one a cleanup would remove and how much space it would reclaim." width="864">
+</p>
+
 ## Why cargo-broom?
 
 `cargo clean` works well for one known project. It does not answer which of dozens
