@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- The project site uses the current shared theme (0.12.11) and ends with a link to the quickstart.
+- The project site uses the current shared theme (0.12.12) and ends with a link to the quickstart.
 
 ### Fixed
 
